@@ -1,8 +1,8 @@
 /* global CONFIG */
 const CONFIG = {
   API_BASE: '',
-  MAP_CENTER: [35.6812, 139.7671],
-  MAP_ZOOM: 12,
+  MAP_CENTER: [35.6842, 139.7619],
+  MAP_ZOOM: 14,
   REALTIME_INTERVAL: 30000,
   ROUTE_COLORS: {
     '都01': '#00843D', '都02': '#00843D', '都04': '#00843D', '都05-1': '#00843D', '都05-2': '#00843D', '都07': '#00843D',
