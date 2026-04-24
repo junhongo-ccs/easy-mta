@@ -13,9 +13,9 @@
   --text-primary:  #e6edf3;
   --text-secondary:#8b949e;
   --text-muted:    #6e7681;
-  --accent:        #FCCC0A;
-  --accent-dark:   #c9a200;
-  --accent-hover:  #ffd93d;
+  --accent:        #1A753F;
+  --accent-dark:   #11532c;
+  --accent-hover:  #239454;
   --error:         #f85149;
   --success:       #3fb950;
   --warning:       #d29922;
@@ -103,7 +103,7 @@ html, body {
   transition: background var(--transition), border-color var(--transition);
 }
 .icon-btn:hover    { background: var(--bg-panel); border-color: var(--accent); }
-.icon-btn.active   { background: var(--accent); color: #000; border-color: var(--accent); }
+.icon-btn.active   { background: var(--accent); color: #fff; border-color: var(--accent); }
 .icon-btn.spinning { animation: spin 0.8s linear infinite; }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -180,7 +180,7 @@ html, body {
 .popup-btn {
   margin-top: 8px;
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border: none;
   border-radius: var(--radius-sm);
   padding: 5px 12px;
@@ -431,7 +431,7 @@ html, body {
 
 .message-user .message-bubble {
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border-bottom-right-radius: var(--radius-sm);
 }
 
@@ -518,7 +518,7 @@ html, body {
   font-size: 1.1rem;
   transition: background var(--transition), transform var(--transition);
   flex-shrink: 0;
-  color: #000;
+  color: #fff;
 }
 #send-btn:hover  { background: var(--accent-hover); transform: scale(1.05); }
 #send-btn:active { transform: scale(0.95); }
