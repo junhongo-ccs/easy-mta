@@ -99,8 +99,8 @@ const MapManager = (() => {
           ${titleText}
         </div>
         ${v.destination ? `<div class="popup-meta">行先: ${v.destination}</div>` : ''}
-        <div class="popup-meta">車両ID: ${v.id}</div>
-        <div class="popup-meta">更新: ${updated}</div>
+        <div class="popup-meta popup-meta-sub">車両ID: ${v.id}</div>
+        <div class="popup-meta popup-meta-sub">更新: ${updated}</div>
       </div>`;
   }
 

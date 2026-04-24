@@ -161,6 +161,7 @@ html, body {
 }
 .popup-routes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .popup-meta   { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 2px; }
+.popup-meta-sub { font-size: 0.68rem; color: var(--text-muted); }
 .popup-id     { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
 
 .route-badge {
