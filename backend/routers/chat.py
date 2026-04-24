@@ -135,7 +135,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     f"- エリア: {map_context.get('area', '未設定')}\n"
                     f"- {accessible}\n"
                     f"- 停留所ID: {map_context.get('stop_id')}\n\n"
-                    "地図上の停留所データをもとに表示しています。周辺の車両を知りたい場合は、この停留所名で「近くのバス」と聞いてください。"
+                    "地図上の停留所データをもとに表示しています。周辺を走行中の車両や利用できる系統も、この停留所を起点に案内できます。"
                 ),
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
             }
