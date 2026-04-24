@@ -55,6 +55,20 @@ const ChatManager = (() => {
     return text.replace(/```json\s*[\s\S]*?```/gi, '').trim();
   }
 
+  function _extractVehicleIds(text) {
+    const ids = new Set();
+    const patterns = [
+      /(?:車両ID|バスID)\s*[:：]?\s*([A-Z]\d{2,4})/g,
+    ];
+    patterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        ids.add(match[1]);
+      }
+    });
+    return Array.from(ids);
+  }
+
   function _shouldAttachLastMapContext(text) {
     if (!_lastMapContext) return false;
     if (_lastMapContext.type !== 'stop') return false;
@@ -230,6 +244,12 @@ const ChatManager = (() => {
       answer = _stripMapCommandBlock(answer);
     }
 
+    const vehicleIds = _extractVehicleIds(answer);
+    if (vehicleIds.length > 0 && window.MapManager?.filterVehicles) {
+      MapManager.filterVehicles({ vehicle_ids: vehicleIds });
+      _showCommandNotice(`${vehicleIds.length}台の車両だけ表示中`);
+    }
+
     if (answer) addMessage('assistant', answer);
   }
 
@@ -269,6 +289,12 @@ const ChatManager = (() => {
           _showCommandNotice(`${cmd.route_short_name || cmd.route_id || '指定'} の車両を表示中`);
         }
         break;
+      case 'filterVehiclesByIds':
+        if (MapManager.filterVehicles) {
+          MapManager.filterVehicles({ vehicle_ids: cmd.vehicle_ids || [] });
+          _showCommandNotice(`${(cmd.vehicle_ids || []).length}台の車両だけ表示中`);
+        }
+        break;
       case 'resetVehicleFilters':
         if (MapManager.clearVehicleFilter) {
           MapManager.clearVehicleFilter();
@@ -293,6 +319,13 @@ const ChatManager = (() => {
 
   return {
     init,
+    reset() {
+      _conversationId = null;
+      _lastMapContext = null;
+      _isTyping = false;
+      hideTyping();
+      init();
+    },
     sendMessage,
     sendMapContext,
     handleResponse,

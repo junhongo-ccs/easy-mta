@@ -73,7 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
     newChatBtn.addEventListener('click', () => {
       const area = document.getElementById('chat-messages');
       if (area) area.innerHTML = '';
-      ChatManager.init();
+      if (MapManager.clearVehicleFilter) MapManager.clearVehicleFilter();
+      MapManager.filterStops(null);
+      ChatManager.reset();
     });
   }
 });
