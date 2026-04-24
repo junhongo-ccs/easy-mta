@@ -4,10 +4,8 @@ info:
   version: 0.1.0
   description: Tools for searching live Toei Bus vehicle positions and PoC stop data.
 servers:
-  - url: http://host.docker.internal:8000
-    description: Local FastAPI server from Dify Docker
-  - url: http://127.0.0.1:8000
-    description: Local FastAPI server from local Dify
+  - url: https://easy-mta-production.up.railway.app
+    description: Railway production FastAPI server
 paths:
   /api/gtfs/stops/search:
     get:
