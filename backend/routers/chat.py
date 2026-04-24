@@ -277,6 +277,18 @@ async def send_message(body: ChatRequest):
             "demo_mode": True,
         }
 
+    if body.map_context:
+        context_answer = await _demo_response(body.message, body.map_context)
+        return {
+            "answer": context_answer.get("answer", ""),
+            "conversation_id": body.conversation_id,
+            "message_id": "local-map-context",
+            "tool_calls": [],
+            "map_command": context_answer.get("map_command"),
+            "dify_mode": "local_map_context",
+            "demo_mode": False,
+        }
+
     # Build the Dify blocking chat-messages payload
     inputs = dict(body.inputs or {})
     if body.map_context:
