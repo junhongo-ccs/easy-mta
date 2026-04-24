@@ -43,6 +43,10 @@ def _dify_key() -> Optional[str]:
     return os.getenv("DIFY_API_KEY", "").strip() or None
 
 
+def _dify_app_mode() -> str:
+    return os.getenv("DIFY_APP_MODE", "auto").strip().lower()
+
+
 def _api_key() -> Optional[str]:
     return os.getenv("ODPT_API_KEY") or None
 
@@ -234,29 +238,60 @@ async def send_message(body: ChatRequest):
     if body.map_context:
         inputs["map_context"] = body.map_context
 
-    payload: dict[str, Any] = {
+    chat_payload: dict[str, Any] = {
         "query": body.message,
         "inputs": inputs,
         "response_mode": "blocking",
         "user": "easy-mta-user",
     }
     if body.conversation_id:
-        payload["conversation_id"] = body.conversation_id
+        chat_payload["conversation_id"] = body.conversation_id
 
     headers = {
         "Authorization": f"Bearer {dify_key}",
         "Content-Type": "application/json",
     }
 
+    async def call_chat_messages(client: httpx.AsyncClient) -> dict[str, Any]:
+        resp = await client.post(
+            f"{dify_url.rstrip('/')}/v1/chat-messages",
+            json=chat_payload,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def call_workflow(client: httpx.AsyncClient) -> dict[str, Any]:
+        workflow_inputs = {**inputs, "query": body.message}
+        resp = await client.post(
+            f"{dify_url.rstrip('/')}/v1/workflows/run",
+            json={
+                "inputs": workflow_inputs,
+                "response_mode": "blocking",
+                "user": "easy-mta-user",
+            },
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{dify_url.rstrip('/')}/v1/chat-messages",
-                json=payload,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            if _dify_app_mode() == "workflow":
+                data = await call_workflow(client)
+                mode = "workflow"
+            elif _dify_app_mode() == "chat":
+                data = await call_chat_messages(client)
+                mode = "chat"
+            else:
+                try:
+                    data = await call_chat_messages(client)
+                    mode = "chat"
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code != 400 or "not_chat_app" not in exc.response.text:
+                        raise
+                    data = await call_workflow(client)
+                    mode = "workflow"
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,
@@ -270,15 +305,31 @@ async def send_message(body: ChatRequest):
 
     # Normalise the Dify response
     tool_calls: list[dict] = []
-    for msg in data.get("messages", []):
-        if msg.get("type") == "tool":
-            tool_calls.append(msg)
+    answer = ""
+    conversation_id = None
+    message_id = None
+
+    if mode == "workflow":
+        workflow_data = data.get("data") or {}
+        outputs = workflow_data.get("outputs") or {}
+        answer = outputs.get("answer") or outputs.get("text") or ""
+        if not answer and outputs:
+            answer = next((str(v) for v in outputs.values() if isinstance(v, str)), "")
+        message_id = workflow_data.get("id") or data.get("workflow_run_id")
+    else:
+        answer = data.get("answer", "")
+        conversation_id = data.get("conversation_id")
+        message_id = data.get("id")
+        for msg in data.get("messages", []):
+            if msg.get("type") == "tool":
+                tool_calls.append(msg)
 
     return {
-        "answer": data.get("answer", ""),
-        "conversation_id": data.get("conversation_id"),
-        "message_id": data.get("id"),
+        "answer": answer,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
         "tool_calls": tool_calls,
+        "dify_mode": mode,
         "demo_mode": False,
     }
 
