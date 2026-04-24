@@ -88,22 +88,20 @@ const MapManager = (() => {
     const color = _routeColor(label);
     const textColor = _routeTextColor(label);
     const updated = _formatEpochJst(v.timestamp);
+    const title = v.route_display_name || '都バス車両';
+    const titleText = v.route_short_name && title.startsWith(v.route_short_name)
+      ? title.slice(v.route_short_name.length).trim()
+      : title;
     return `
       <div class="map-popup">
         <div class="popup-name">
           <span class="route-badge" style="background:${color};color:${textColor}">${label}</span>
-          ${v.route_display_name || '都バス車両'}
+          ${titleText}
         </div>
         ${v.destination ? `<div class="popup-meta">行先: ${v.destination}</div>` : ''}
         <div class="popup-meta">車両ID: ${v.id}</div>
         <div class="popup-meta">更新: ${updated}</div>
       </div>`;
-  }
-
-  function _directionLabel(d) {
-    if (d === 0) return '往路';
-    if (d === 1) return '復路';
-    return '不明';
   }
 
   function _statusLabel(s) {
