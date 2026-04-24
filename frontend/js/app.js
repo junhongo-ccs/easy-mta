@@ -41,9 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     accessBtn.addEventListener('click', () => {
       accessActive = !accessActive;
       if (accessActive) {
-        MapManager.filterStops(stop =>
-          stop.wheelchair_boarding === 1 || stop.wheelchair_accessible === true
-        );
+        MapManager.filterStops(stop => stop.wheelchair_accessible === true);
         accessBtn.classList.add('active');
         accessBtn.title = 'バリアフリーフィルター解除';
       } else {

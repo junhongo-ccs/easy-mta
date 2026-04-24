@@ -22,6 +22,10 @@ const ChatManager = (() => {
 
   function _el(id) { return document.getElementById(id); }
 
+  function _formatTime(date) {
+    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  }
+
   function _scrollToBottom() {
     const area = _el('chat-messages');
     if (area) area.scrollTop = area.scrollHeight;
@@ -106,8 +110,7 @@ const ChatManager = (() => {
 
     const time = document.createElement('div');
     time.className = 'message-time';
-    const now = new Date();
-    time.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    time.textContent = _formatTime(new Date());
 
     wrapper.appendChild(bubble);
     wrapper.appendChild(time);
@@ -228,9 +231,7 @@ const ChatManager = (() => {
         MapManager.focusOn(cmd.lat, cmd.lng, cmd.zoom);
         break;
       case 'filterAccessible':
-        MapManager.filterStops(stop =>
-          stop.wheelchair_boarding === 1 || stop.wheelchair_accessible === true
-        );
+        MapManager.filterStops(stop => stop.wheelchair_accessible === true);
         _showCommandNotice('♿ バリアフリー駅のみ表示中');
         break;
       case 'highlightStop':

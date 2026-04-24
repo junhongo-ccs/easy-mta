@@ -13,6 +13,14 @@ import httpx
 
 MTA_BASE_URL = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs"
 
+# Mock data delay/arrival constants
+_MOCK_MIN_DELAY_SECONDS = -60
+_MOCK_MAX_DELAY_SECONDS = 120
+_MOCK_MIN_DEPARTURE_DELAY = 0
+_MOCK_MAX_DEPARTURE_DELAY = 120
+_MOCK_MIN_ARRIVAL_OFFSET = 60
+_MOCK_MAX_ARRIVAL_OFFSET = 300
+
 # Feed suffixes for each route group
 _FEED_SUFFIXES: dict[str, str] = {
     "ace":  "-ace",
@@ -73,7 +81,12 @@ def _mock_vehicles(route_ids: Optional[list[str]]) -> list[dict]:
             continue
         jitter_lat = (random.random() - 0.5) * 0.002
         jitter_lon = (random.random() - 0.5) * 0.002
-        vehicles.append({**v, "latitude": round(v["latitude"] + jitter_lat, 6), "longitude": round(v["longitude"] + jitter_lon, 6), "timestamp": ts})
+        vehicles.append({
+            **v,
+            "latitude": round(v["latitude"] + jitter_lat, 6),
+            "longitude": round(v["longitude"] + jitter_lon, 6),
+            "timestamp": ts,
+        })
     return vehicles
 
 
@@ -86,7 +99,12 @@ def _mock_trip_updates(route_ids: Optional[list[str]]) -> list[dict]:
             "trip_id": v["trip_id"],
             "route_id": v["route_id"],
             "stop_time_updates": [
-                {"stop_id": v["stop_id"], "arrival_delay": random.randint(-60, 120), "departure_delay": random.randint(0, 120), "arrival_time": int(time.time()) + random.randint(60, 300)},
+                {
+                    "stop_id": v["stop_id"],
+                    "arrival_delay": random.randint(_MOCK_MIN_DELAY_SECONDS, _MOCK_MAX_DELAY_SECONDS),
+                    "departure_delay": random.randint(_MOCK_MIN_DEPARTURE_DELAY, _MOCK_MAX_DEPARTURE_DELAY),
+                    "arrival_time": int(time.time()) + random.randint(_MOCK_MIN_ARRIVAL_OFFSET, _MOCK_MAX_ARRIVAL_OFFSET),
+                },
             ],
         })
     return updates

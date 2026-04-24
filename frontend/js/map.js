@@ -8,7 +8,6 @@ const MapManager = (() => {
   let _alertLayer = null;
   let _allStops = [];
   let _activeFilter = null;
-  let _vehicleCounter = 0;
   let _realtimeTimer = null;
 
   // -------------------------------------------------------------------------
@@ -17,6 +16,10 @@ const MapManager = (() => {
 
   function _routeColor(routeId) {
     return (CONFIG.ROUTE_COLORS[routeId]) || '#808183';
+  }
+
+  function _routeTextColor(routeId) {
+    return (routeId === 'N' || routeId === 'Q' || routeId === 'R' || routeId === 'W' || routeId === 'L' || routeId === 'G') ? '#000' : '#fff';
   }
 
   function _stopRouteColor(stop) {
@@ -36,7 +39,7 @@ const MapManager = (() => {
 
   function _makeVehicleIcon(routeId) {
     const color = _routeColor(routeId);
-    const textColor = (routeId === 'N' || routeId === 'Q' || routeId === 'R' || routeId === 'W') ? '#000' : '#fff';
+    const textColor = _routeTextColor(routeId);
     return L.divIcon({
       className: '',
       html: `<div class="vehicle-icon" style="background:${color};color:${textColor};" title="${routeId}">${routeId}</div>`,
@@ -48,9 +51,9 @@ const MapManager = (() => {
   function _stopPopupHTML(stop) {
     const routes = (stop.routes || []);
     const badges = routes.map(r =>
-      `<span class="route-badge" style="background:${_routeColor(r)};color:${r === 'N' || r === 'Q' || r === 'R' || r === 'W' ? '#000' : '#fff'}">${r}</span>`
+      `<span class="route-badge" style="background:${_routeColor(r)};color:${_routeTextColor(r)}">${r}</span>`
     ).join(' ');
-    const accessible = stop.wheelchair_boarding === 1
+    const accessible = stop.wheelchair_accessible === true
       ? '<span class="accessible-icon" title="バリアフリー">♿</span>'
       : '';
     return `
@@ -65,7 +68,7 @@ const MapManager = (() => {
 
   function _vehiclePopupHTML(v) {
     const color = _routeColor(v.route_id);
-    const textColor = (v.route_id === 'N' || v.route_id === 'Q' || v.route_id === 'R' || v.route_id === 'W') ? '#000' : '#fff';
+    const textColor = _routeTextColor(v.route_id);
     return `
       <div class="map-popup">
         <div class="popup-name">
@@ -213,7 +216,8 @@ const MapManager = (() => {
       const lat = parseFloat(pos.latitude ?? pos.lat);
       const lng = parseFloat(pos.longitude ?? pos.lon ?? pos.lng);
       const routeId = trip.route_id || entity.route_id || v.route_id || '?';
-      const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id || `vehicle-${++_vehicleCounter}`;
+      const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id
+        || `${routeId}-${(trip.trip_id || entity.trip_id || v.trip_id || 'unknown').slice(0, 16)}-${lat.toFixed(4)}-${lng.toFixed(4)}`;
 
       if (isNaN(lat) || isNaN(lng)) return;
 
