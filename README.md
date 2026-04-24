@@ -44,7 +44,7 @@ Difyがユーザーの自然言語を解釈し、マップを操作します：
 ### 前提条件
 - Docker + Docker Compose
 - （任意）MTA Developer API Key：https://api.mta.info/#/signup
-- （任意）Dify API Key
+- （任意）Dify API URL と API Key（セルフホストの場合は例: `http://localhost`、クラウドの場合は `https://api.dify.ai`）
 
 ### 手順
 
@@ -55,7 +55,7 @@ cd easy-mta
 
 # 2. 環境変数ファイルを作成
 cp .env.example .env
-# .env を編集して MTA_API_KEY と DIFY_API_KEY を設定（任意）
+# .env を編集して MTA_API_KEY / DIFY_API_URL / DIFY_API_KEY を設定（任意）
 
 # 3. 起動
 docker-compose up --build
@@ -107,6 +107,7 @@ easy-mta/
 | `GET /api/gtfs/realtime/trip-updates` | 列車遅延・到着予測 |
 | `GET /api/gtfs/realtime/alerts` | サービスアラート |
 | `POST /api/chat/message` | Dify チャットプロキシ |
+| `DELETE /api/chat/conversation/{conversation_id}` | Dify 会話の削除 |
 
 ---
 
