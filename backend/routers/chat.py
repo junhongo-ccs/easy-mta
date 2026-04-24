@@ -47,6 +47,10 @@ def _dify_app_mode() -> str:
     return os.getenv("DIFY_APP_MODE", "auto").strip().lower()
 
 
+def _dify_ssl_verify() -> bool:
+    return os.getenv("DIFY_SSL_VERIFY", "true").strip().lower() not in {"0", "false", "no"}
+
+
 def _api_key() -> Optional[str]:
     return os.getenv("ODPT_API_KEY") or None
 
@@ -372,7 +376,7 @@ async def send_message(body: ChatRequest):
         return resp.json()
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(verify=_dify_ssl_verify(), timeout=60.0) as client:
             if _dify_app_mode() == "workflow":
                 data = await call_workflow(client)
                 mode = "workflow"
