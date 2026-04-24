@@ -121,8 +121,10 @@ const MapManager = (() => {
     _map = L.map('map', {
       center: CONFIG.MAP_CENTER,
       zoom: CONFIG.MAP_ZOOM,
-      zoomControl: true,
+      zoomControl: false,
     });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(_map);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',

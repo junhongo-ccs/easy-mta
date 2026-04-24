@@ -42,25 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   });
 
-  // ── Accessibility filter button ──────────────────────────────────────────
-  const accessBtn = document.getElementById('accessibility-btn');
-  let accessActive = false;
-
-  if (accessBtn) {
-    accessBtn.addEventListener('click', () => {
-      accessActive = !accessActive;
-      if (accessActive) {
-        MapManager.filterStops(stop => stop.wheelchair_accessible === true);
-        accessBtn.classList.add('active');
-        accessBtn.title = 'バリアフリーフィルター解除';
-      } else {
-        MapManager.filterStops(null);
-        accessBtn.classList.remove('active');
-        accessBtn.title = 'バリアフリー停留所のみ表示';
-      }
-    });
-  }
-
   // ── Refresh real-time data button ────────────────────────────────────────
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) {
