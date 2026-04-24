@@ -76,6 +76,50 @@ def _vehicle_line(vehicle: dict, include_distance: bool = False) -> str:
     return f"- **{route}** 車両ID: {vehicle.get('vehicle_id')}{destination}{distance}"
 
 
+def _context_as_prompt(message: str, map_context: Optional[dict[str, Any]]) -> str:
+    if not map_context:
+        return message
+
+    if map_context.get("type") == "vehicle":
+        fields = {
+            "車両ID": map_context.get("id") or map_context.get("vehicle_id"),
+            "系統": map_context.get("route_display_name") or map_context.get("route_short_name"),
+            "GTFS route_id": map_context.get("route_id"),
+            "行先": map_context.get("destination"),
+            "状態": map_context.get("current_status"),
+            "緯度": map_context.get("lat") or map_context.get("latitude"),
+            "経度": map_context.get("lng") or map_context.get("longitude"),
+            "位置情報時刻": _format_epoch_jst(map_context.get("timestamp")),
+            "データソース": "ODPT実データ" if map_context.get("source") == "odpt" else map_context.get("source"),
+        }
+        details = "\n".join(f"- {key}: {value}" for key, value in fields.items() if value)
+        return (
+            f"{message}\n\n"
+            "地図上でクリックされた車両の情報は以下です。この情報を根拠に回答してください。\n"
+            f"{details}"
+        )
+
+    if map_context.get("type") == "stop":
+        routes = "、".join(map_context.get("routes") or [])
+        fields = {
+            "停留所名": map_context.get("stop_name") or map_context.get("name"),
+            "停留所ID": map_context.get("stop_id"),
+            "エリア": map_context.get("area"),
+            "主な系統": routes,
+            "緯度": map_context.get("stop_lat") or map_context.get("lat"),
+            "経度": map_context.get("stop_lon") or map_context.get("lng"),
+            "バリアフリー": map_context.get("wheelchair_accessible"),
+        }
+        details = "\n".join(f"- {key}: {value}" for key, value in fields.items() if value is not None and value != "")
+        return (
+            f"{message}\n\n"
+            "地図上でクリックされた停留所の情報は以下です。この情報を根拠に回答してください。\n"
+            f"{details}"
+        )
+
+    return message
+
+
 async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) -> dict[str, Any]:
     text = message.strip()
 
@@ -238,8 +282,10 @@ async def send_message(body: ChatRequest):
     if body.map_context:
         inputs["map_context"] = body.map_context
 
+    enriched_query = _context_as_prompt(body.message, body.map_context)
+
     chat_payload: dict[str, Any] = {
-        "query": body.message,
+        "query": enriched_query,
         "inputs": inputs,
         "response_mode": "blocking",
         "user": "easy-mta-user",
@@ -262,7 +308,7 @@ async def send_message(body: ChatRequest):
         return resp.json()
 
     async def call_workflow(client: httpx.AsyncClient) -> dict[str, Any]:
-        workflow_inputs = {**inputs, "query": body.message}
+        workflow_inputs = {**inputs, "query": enriched_query}
         resp = await client.post(
             f"{dify_url.rstrip('/')}/v1/workflows/run",
             json={
