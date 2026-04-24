@@ -7,7 +7,9 @@ const MapManager = (() => {
   let _vehicleMarkers = {};   // vehicle_id → L.Marker
   let _alertLayer = null;
   let _allStops = [];
+  let _allVehicles = [];
   let _activeFilter = null;
+  let _activeVehicleFilter = null;
   let _realtimeTimer = null;
 
   // -------------------------------------------------------------------------
@@ -15,11 +17,19 @@ const MapManager = (() => {
   // -------------------------------------------------------------------------
 
   function _routeColor(routeId) {
-    return (CONFIG.ROUTE_COLORS[routeId]) || '#808183';
+    if (CONFIG.ROUTE_COLORS[routeId]) return CONFIG.ROUTE_COLORS[routeId];
+    const text = String(routeId || '?');
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      hash = ((hash << 5) - hash) + text.charCodeAt(i);
+      hash |= 0;
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue} 72% 46%)`;
   }
 
   function _routeTextColor(routeId) {
-    return (routeId === 'N' || routeId === 'Q' || routeId === 'R' || routeId === 'W' || routeId === 'L' || routeId === 'G') ? '#000' : '#fff';
+    return (routeId === '上23' || routeId === '上46' || routeId === '業10') ? '#000' : '#fff';
   }
 
   function _stopRouteColor(stop) {
@@ -40,12 +50,19 @@ const MapManager = (() => {
   function _makeVehicleIcon(routeId) {
     const color = _routeColor(routeId);
     const textColor = _routeTextColor(routeId);
+    const label = String(routeId || '?');
+    const width = Math.max(38, Math.min(72, (label.length * 12) + 18));
     return L.divIcon({
       className: '',
-      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};" title="${routeId}">${routeId}</div>`,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
+      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};" title="${label}">${label}</div>`,
+      iconSize: [width, 26],
+      iconAnchor: [width / 2, 13],
     });
+  }
+
+  function _makeVehicleIconForVehicle(v, highlighted = false) {
+    const label = v.route_label || v.route_short_name || v.route_display_name || v.route_id || '?';
+    return _makeVehicleIcon(label, highlighted);
   }
 
   function _stopPopupHTML(stop) {
@@ -67,14 +84,16 @@ const MapManager = (() => {
   }
 
   function _vehiclePopupHTML(v) {
-    const color = _routeColor(v.route_id);
-    const textColor = _routeTextColor(v.route_id);
+    const label = v.route_label || v.route_short_name || v.route_id;
+    const color = _routeColor(label);
+    const textColor = _routeTextColor(label);
     return `
       <div class="map-popup">
         <div class="popup-name">
-          <span class="route-badge" style="background:${color};color:${textColor}">${v.route_id}</span>
-          ${v.trip_id ? `列車 ${v.trip_id.slice(0, 12)}…` : '車両'}
+          <span class="route-badge" style="background:${color};color:${textColor}">${label}</span>
+          ${v.route_display_name || '都バス車両'}
         </div>
+        ${v.destination ? `<div class="popup-meta">行先: ${v.destination}</div>` : ''}
         <div class="popup-meta">方向: ${_directionLabel(v.direction_id)}</div>
         <div class="popup-meta">状態: ${_statusLabel(v.current_status)}</div>
         <button class="popup-btn" onclick="ChatManager.sendMapContext(${JSON.stringify(v).replace(/"/g, '&quot;')})">AIに質問</button>
@@ -82,8 +101,8 @@ const MapManager = (() => {
   }
 
   function _directionLabel(d) {
-    if (d === 0) return '下り (South/West)';
-    if (d === 1) return '上り (North/East)';
+    if (d === 0) return '往路';
+    if (d === 1) return '復路';
     return '不明';
   }
 
@@ -140,6 +159,7 @@ const MapManager = (() => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const vehicles = Array.isArray(data) ? data : (data.vehicles || data.entity || []);
+      _allVehicles = vehicles;
       loadVehicles(vehicles);
       _updateStatus(true);
     } catch (e) {
@@ -165,6 +185,28 @@ const MapManager = (() => {
     if (!el) return;
     el.className = ok ? 'status-dot connected' : 'status-dot error';
     el.title = ok ? '接続中' : '接続エラー';
+  }
+
+  function _formatEpochJst(epoch) {
+    if (!epoch) return '--';
+    const date = new Date(Number(epoch) * 1000);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function _updateVehicleSummary(vehicles) {
+    const countEl = document.getElementById('vehicle-count');
+    const feedTimeEl = document.getElementById('feed-time');
+    if (countEl) countEl.textContent = String(vehicles.length);
+    if (feedTimeEl) {
+      const latest = vehicles.reduce((max, v) => Math.max(max, Number(v.timestamp || v.feed_timestamp || 0)), 0);
+      feedTimeEl.textContent = `取得時刻: ${_formatEpochJst(latest)}`;
+    }
   }
 
   function loadStops(stops) {
@@ -203,6 +245,46 @@ const MapManager = (() => {
     if (_activeFilter) filterStops(_activeFilter);
   }
 
+  function _normalizeVehicle(v) {
+    const entity = v.vehicle || v;
+    const pos = entity.position || v.position || v;
+    const trip = entity.trip || v.trip || {};
+    const lat = parseFloat(pos.latitude ?? pos.lat);
+    const lng = parseFloat(pos.longitude ?? pos.lon ?? pos.lng);
+    const routeId = trip.route_id || entity.route_id || v.route_id || '?';
+    const routeLabel = v.route_short_name || v.route_display_name || routeId;
+    const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id
+      || `${routeId}-${(trip.trip_id || entity.trip_id || v.trip_id || 'unknown').slice(0, 16)}-${lat.toFixed(4)}-${lng.toFixed(4)}`;
+
+    if (isNaN(lat) || isNaN(lng)) return null;
+
+    return {
+      id: vehicleId,
+      route_id: routeId,
+      route_short_name: v.route_short_name,
+      route_long_name: v.route_long_name,
+      route_display_name: v.route_display_name,
+      route_label: routeLabel,
+      destination: v.destination,
+      pattern_id: v.pattern_id,
+      trip_id: trip.trip_id || entity.trip_id || v.trip_id,
+      direction_id: trip.direction_id ?? entity.direction_id ?? v.direction_id,
+      current_status: entity.current_status || v.current_status,
+      timestamp: entity.timestamp || v.timestamp,
+      source: v.source,
+      lat, lng,
+    };
+  }
+
+  function _vehicleMatchesFilter(vehicle, filter) {
+    if (!filter) return true;
+    if (filter.route_short_name && vehicle.route_short_name !== filter.route_short_name) return false;
+    if (filter.route_id && vehicle.route_id !== filter.route_id) return false;
+    if (filter.destination && vehicle.destination !== filter.destination) return false;
+    if (filter.vehicle_ids && !filter.vehicle_ids.includes(vehicle.id)) return false;
+    return true;
+  }
+
   function loadVehicles(vehicles) {
     // Remove old vehicle markers
     Object.values(_vehicleMarkers).forEach(m => _map.removeLayer(m));
@@ -210,34 +292,33 @@ const MapManager = (() => {
 
     vehicles.forEach(v => {
       // Normalise nested protobuf-style structure
-      const entity = v.vehicle || v;
-      const pos = entity.position || v.position || v;
-      const trip = entity.trip || v.trip || {};
-      const lat = parseFloat(pos.latitude ?? pos.lat);
-      const lng = parseFloat(pos.longitude ?? pos.lon ?? pos.lng);
-      const routeId = trip.route_id || entity.route_id || v.route_id || '?';
-      const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id
-        || `${routeId}-${(trip.trip_id || entity.trip_id || v.trip_id || 'unknown').slice(0, 16)}-${lat.toFixed(4)}-${lng.toFixed(4)}`;
+      const normalized = _normalizeVehicle(v);
+      if (!normalized) return;
+      if (!_vehicleMatchesFilter(normalized, _activeVehicleFilter)) return;
 
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      const normalized = {
-        id: vehicleId,
-        route_id: routeId,
-        trip_id: trip.trip_id || entity.trip_id || v.trip_id,
-        direction_id: trip.direction_id ?? entity.direction_id ?? v.direction_id,
-        current_status: entity.current_status || v.current_status,
-        lat, lng,
-      };
-
-      const marker = L.marker([lat, lng], { icon: _makeVehicleIcon(routeId) });
+      const marker = L.marker([normalized.lat, normalized.lng], { icon: _makeVehicleIconForVehicle(normalized) });
+      marker._vehicleData = normalized;
       marker.bindPopup(_vehiclePopupHTML(normalized), { maxWidth: 260 });
       marker.on('click', () => {
         if (window.ChatManager) ChatManager.sendMapContext({ type: 'vehicle', ...normalized });
       });
       marker.addTo(_map);
-      _vehicleMarkers[vehicleId] = marker;
+      _vehicleMarkers[normalized.id] = marker;
     });
+    const visibleVehicles = Object.values(_vehicleMarkers)
+      .map(marker => marker._vehicleData)
+      .filter(Boolean);
+    _updateVehicleSummary(visibleVehicles);
+  }
+
+  function filterVehicles(filter) {
+    _activeVehicleFilter = filter;
+    loadVehicles(_allVehicles);
+  }
+
+  function clearVehicleFilter() {
+    _activeVehicleFilter = null;
+    loadVehicles(_allVehicles);
   }
 
   function loadAlerts(alerts) {
@@ -325,6 +406,8 @@ const MapManager = (() => {
     highlightStop,
     getStopInfo,
     refreshRealtime,
+    filterVehicles,
+    clearVehicleFilter,
     getMap,
   };
 })();

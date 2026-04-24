@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Easy MTA – ニューヨーク地下鉄リアルタイムガイド (日本語)">
-  <title>🗽 Easy MTA – ニューヨーク地下鉄ガイド</title>
+  <meta name="description" content="都バス運行案内サイト PoC - リアルタイム車両位置とAI案内">
+  <title>都バス運行案内サイト PoC</title>
 
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 
   <!-- App CSS -->
   <link rel="stylesheet" href="css/style.css">
@@ -17,7 +16,7 @@
 
 <!-- ── Top Bar ──────────────────────────────────────────── -->
 <header id="topbar" role="banner">
-  <div id="topbar-title">🗽 Easy MTA <span>ニューヨーク地下鉄ガイド</span></div>
+  <div id="topbar-title">都バス運行案内 <span>PoC</span></div>
   <div id="topbar-controls">
     <span class="status-dot" id="status-indicator" title="接続確認中"></span>
     <span class="status-label" id="status-label">リアルタイム</span>
@@ -31,7 +30,7 @@
 <div id="main" role="main">
 
   <!-- ── Left: Map Panel ──────────────────────────────── -->
-  <section id="map-panel" aria-label="ニューヨーク地下鉄地図">
+  <section id="map-panel" aria-label="都バス運行地図">
 
     <!-- Map container -->
     <div id="map" aria-label="インタラクティブ地図"></div>
@@ -39,102 +38,26 @@
     <!-- Map overlay controls -->
     <div id="map-controls">
       <button class="icon-btn" id="accessibility-btn"
-              title="バリアフリー駅のみ表示"
+              title="バリアフリー停留所のみ表示"
               aria-label="バリアフリーフィルター"
               aria-pressed="false">
         ♿
       </button>
     </div>
 
-    <!-- Route legend -->
-    <div id="legend-container" aria-label="路線凡例">
+    <!-- Live data summary -->
+    <div id="legend-container" aria-label="リアルタイムデータ概要">
       <div id="route-legend">
-        <div class="legend-title">路線カラー</div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#EE352E;color:#fff">1</span>
-            <span class="route-badge" style="background:#EE352E;color:#fff">2</span>
-            <span class="route-badge" style="background:#EE352E;color:#fff">3</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IRT Broadway</span>
+        <div class="legend-title">リアルタイム表示</div>
+        <div class="legend-stat">
+          <span class="legend-stat-value" id="vehicle-count">--</span>
+          <span class="legend-stat-label">台の車両</span>
         </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#00933C;color:#fff">4</span>
-            <span class="route-badge" style="background:#00933C;color:#fff">5</span>
-            <span class="route-badge" style="background:#00933C;color:#fff">6</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IRT Lexington</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#B933AD;color:#fff">7</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IRT Flushing</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#0039A6;color:#fff">A</span>
-            <span class="route-badge" style="background:#0039A6;color:#fff">C</span>
-            <span class="route-badge" style="background:#0039A6;color:#fff">E</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IND Eighth Ave</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#FF6319;color:#fff">B</span>
-            <span class="route-badge" style="background:#FF6319;color:#fff">D</span>
-            <span class="route-badge" style="background:#FF6319;color:#fff">F</span>
-            <span class="route-badge" style="background:#FF6319;color:#fff">M</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IND Sixth Ave</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#FCCC0A;color:#000">N</span>
-            <span class="route-badge" style="background:#FCCC0A;color:#000">Q</span>
-            <span class="route-badge" style="background:#FCCC0A;color:#000">R</span>
-            <span class="route-badge" style="background:#FCCC0A;color:#000">W</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">BMT Broadway</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#A7A9AC;color:#000">L</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">BMT Canarsie</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#6CBE45;color:#fff">G</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">IND Crosstown</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#996633;color:#fff">J</span>
-            <span class="route-badge" style="background:#996633;color:#fff">Z</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">BMT Nassau</span>
-        </div>
-
-        <div class="legend-row">
-          <div class="legend-badges">
-            <span class="route-badge" style="background:#808183;color:#fff">S</span>
-          </div>
-          <span style="font-size:0.75rem;color:var(--text-secondary)">Shuttle</span>
-        </div>
+        <div class="legend-meta" id="feed-time">取得時刻: --</div>
+        <div class="legend-meta">ODPT GTFS-RT VehiclePosition</div>
+        <div class="legend-note">車両をクリックすると系統名・行先・更新時刻を確認できます。</div>
       </div>
-      <button id="legend-toggle">凡例 ▼</button>
+      <button id="legend-toggle">概要 ▼</button>
     </div>
 
     <!-- Map command toast notification -->
@@ -148,8 +71,8 @@
     <!-- Chat Header -->
     <header id="chat-header">
       <div>
-        <div id="chat-header-title">🚇 MTA アシスタント</div>
-        <div id="chat-header-subtitle">地下鉄ガイド AI（日本語対応）</div>
+        <div id="chat-header-title">都バス AI 案内</div>
+        <div id="chat-header-subtitle">運行情報・停留所案内（PoC）</div>
       </div>
       <button class="icon-btn" id="new-chat-btn" title="会話をリセット" aria-label="新しい会話">
         ✎
@@ -162,7 +85,7 @@
     <!-- Input area -->
     <div id="chat-input-area">
       <textarea id="chat-input"
-                placeholder="メッセージを入力… (例: タイムズスクエア駅を表示して)"
+                placeholder="メッセージを入力… (例: 都庁前付近のバスを見せて)"
                 rows="1"
                 aria-label="メッセージ入力欄"
                 autocomplete="off"
@@ -172,7 +95,7 @@
       </button>
     </div>
     <div id="chat-hint">
-      Enterで送信 · Shift+Enterで改行 · 地図の駅をクリックで詳細
+      Enterで送信 · Shift+Enterで改行 · 地図の停留所や車両をクリックで詳細
     </div>
 
   </section><!-- /#chat-panel -->
@@ -181,8 +104,7 @@
 
 <!-- ── Scripts ───────────────────────────────────────────── -->
 <!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqBF4=" crossorigin=""></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 
 <!-- App modules (order matters) -->
 <script src="js/config.js"></script>

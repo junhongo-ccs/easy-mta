@@ -4,24 +4,27 @@ Prefix: /api/chat
 """
 
 import os
+import re
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from services import gtfs_static, gtfs_realtime
+
 router = APIRouter()
+JST = timezone(timedelta(hours=9))
 
 _DEMO_RESPONSE = (
-    "こんにちは！私はNYC地下鉄アシスタントです。\n\n"
-    "現在、Dify APIキーが設定されていないためデモモードで動作しています。\n\n"
-    "実際の環境では、地図上の駅をクリックするとその駅の情報を日本語で説明し、"
-    "「タイムズスクエア駅を表示して」のようなメッセージで地図を操作することができます。\n\n"
-    "**主な機能:**\n"
-    "- 駅情報の日本語解説\n"
-    "- リアルタイム運行情報\n"
-    "- 路線案内\n"
-    "- 地図の操作（ズーム・移動・フィルタリング）"
+    "現在はDify未接続のデモモードです。\n\n"
+    "このPoCでは、都バスの停留所・車両位置・公式FAQをAI案内につなぐ体験を想定しています。\n\n"
+    "**試せること:**\n"
+    "- 「都庁前付近を表示して」\n"
+    "- 「都01を見せて」\n"
+    "- 「バリアフリー停留所を表示して」\n"
+    "- 地図上の停留所や車両をクリック"
 )
 
 
@@ -40,6 +43,174 @@ def _dify_key() -> Optional[str]:
     return os.getenv("DIFY_API_KEY", "").strip() or None
 
 
+def _api_key() -> Optional[str]:
+    return os.getenv("ODPT_API_KEY") or None
+
+
+def _format_epoch_jst(value: Any) -> str:
+    try:
+        return datetime.fromtimestamp(int(value), JST).strftime("%Y-%m-%d %H:%M:%S JST")
+    except Exception:
+        return "未取得"
+
+
+def _route_candidates(text: str) -> list[str]:
+    candidates = re.findall(r"[一-龠ぁ-んァ-ヶA-Za-z]{1,4}\d{1,3}(?:-\d)?|\d{2,3}", text)
+    seen: set[str] = set()
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            result.append(candidate)
+    return result
+
+
+def _vehicle_line(vehicle: dict, include_distance: bool = False) -> str:
+    route = vehicle.get("route_display_name") or vehicle.get("route_short_name") or f"{vehicle.get('route_id')}系統"
+    destination = f" / 行先: {vehicle.get('destination')}" if vehicle.get("destination") else ""
+    distance = f" / 約{vehicle.get('distance_m')}m" if include_distance and vehicle.get("distance_m") is not None else ""
+    return f"- **{route}** 車両ID: {vehicle.get('vehicle_id')}{destination}{distance}"
+
+
+async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) -> dict[str, Any]:
+    text = message.strip()
+
+    if map_context:
+        if map_context.get("type") == "stop":
+            routes = "、".join(map_context.get("routes") or [])
+            accessible = "バリアフリー対応あり" if map_context.get("wheelchair_accessible") else "バリアフリー情報は要確認"
+            return {
+                "answer": (
+                    f"**{map_context.get('stop_name') or map_context.get('name')}** のデモ案内です。\n\n"
+                    f"- 主な系統: {routes or '不明'}\n"
+                    f"- エリア: {map_context.get('area', '未設定')}\n"
+                    f"- {accessible}\n\n"
+                    "本番ではGTFS-JPの停留所情報、接近情報、公式FAQを組み合わせて回答します。"
+                ),
+                "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
+            }
+        if map_context.get("type") == "vehicle":
+            source = "ODPT実データ" if map_context.get("source") == "odpt" else "モックデータ"
+            timestamp = _format_epoch_jst(map_context.get("timestamp"))
+            route_label = (
+                map_context.get("route_display_name")
+                or map_context.get("route_short_name")
+                or f"{map_context.get('route_id')}系統"
+            )
+            route_note = ""
+            if map_context.get("route_short_name") and map_context.get("route_id"):
+                route_note = f"- GTFS route_id: {map_context.get('route_id')}\n"
+            destination = f"- 行先: {map_context.get('destination')}\n" if map_context.get("destination") else ""
+            return {
+                "answer": (
+                    f"**{route_label}** の車両案内です。\n\n"
+                    f"- 車両ID: {map_context.get('id')}\n"
+                    f"{route_note}"
+                    f"{destination}"
+                    f"- 状態: {map_context.get('current_status', '不明')}\n\n"
+                    f"- データ: {source}\n"
+                    f"- 位置情報タイムスタンプ: {timestamp}\n\n"
+                    "GTFS-RT VehiclePositionの車両位置に、ODPT BusroutePatternの表示名を重ねています。"
+                )
+            }
+
+    for stop in gtfs_static.get_stops():
+        aliases = [
+            stop["stop_name"],
+            stop["stop_name"].replace("駅前", ""),
+            stop["stop_name"].replace("第一本庁舎", ""),
+            stop["stop_name"].replace("丸の内南口", ""),
+            stop.get("area", ""),
+        ]
+        if any(alias and alias in text for alias in aliases):
+            wants_nearby = any(word in text for word in ["近く", "付近", "周辺", "走", "車両", "バス"])
+            if wants_nearby:
+                vehicles = await gtfs_realtime.search_nearby_vehicles(
+                    _api_key(),
+                    float(stop["stop_lat"]),
+                    float(stop["stop_lon"]),
+                    radius_m=900,
+                    limit=8,
+                )
+                if vehicles:
+                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in vehicles[:5])
+                    nearest = vehicles[0]
+                    return {
+                        "answer": (
+                            f"**{stop['stop_name']}** から約900m以内を走行中の車両を見つけました。\n\n"
+                            f"{lines}\n\n"
+                            "地図は最も近い車両付近へ移動します。"
+                        ),
+                        "map_command": {
+                            "type": "focusOn",
+                            "lat": nearest["latitude"],
+                            "lng": nearest["longitude"],
+                            "zoom": 15,
+                        },
+                    }
+                return {
+                    "answer": f"**{stop['stop_name']}** 周辺では、現在の検索半径内に車両が見つかりませんでした。",
+                    "map_command": {
+                        "type": "focusOn",
+                        "lat": stop["stop_lat"],
+                        "lng": stop["stop_lon"],
+                        "zoom": 15,
+                    },
+                }
+            return {
+                "answer": (
+                    f"**{stop['stop_name']}** 付近を表示します。\n\n"
+                    "この停留所を起点に、周辺を走行中の車両や利用できる系統を案内する想定です。"
+                ),
+                "map_command": {
+                    "type": "focusOn",
+                    "lat": stop["stop_lat"],
+                    "lng": stop["stop_lon"],
+                    "zoom": 15,
+                },
+            }
+
+    for candidate in _route_candidates(text):
+        vehicles = await gtfs_realtime.search_vehicles_by_route(_api_key(), candidate, limit=8)
+        if vehicles:
+            lines = "\n".join(_vehicle_line(v) for v in vehicles[:5])
+            first = vehicles[0]
+            route_label = first.get("route_short_name") or candidate
+            return {
+                "answer": (
+                    f"**{route_label}** に該当する走行中の車両を見つけました。\n\n"
+                    f"{lines}\n\n"
+                    "地図上では該当系統の車両だけを表示します。"
+                ),
+                "map_command": {
+                    "type": "filterVehiclesByRoute",
+                    "route_short_name": first.get("route_short_name"),
+                    "route_id": first.get("route_id"),
+                },
+            }
+
+    for route in gtfs_static.get_routes():
+        if route["route_id"] in text:
+            return {
+                "answer": f"**{route['route_name']}** の停留所を地図上に絞り込みます。",
+                "map_command": {"type": "showRoute", "route_id": route["route_id"]},
+            }
+
+    if "バリアフリー" in text or "車いす" in text or "車椅子" in text:
+        return {
+            "answer": "バリアフリー対応のある停留所を表示します。本番では停留所設備、乗り場位置、車両情報まで案内対象にします。",
+            "map_command": {"type": "filterAccessible"},
+        }
+
+    if "リセット" in text or "全て" in text or "すべて" in text:
+        return {
+            "answer": "地図の絞り込みを解除します。",
+            "map_command": {"type": "resetFilters"},
+        }
+
+    return {"answer": _DEMO_RESPONSE}
+
+
 @router.post("/message")
 async def send_message(body: ChatRequest):
     """Proxy a chat message to Dify and return the response."""
@@ -48,11 +219,13 @@ async def send_message(body: ChatRequest):
 
     if not dify_url or not dify_key:
         # Demo mode — return canned Japanese response
+        demo = await _demo_response(body.message, body.map_context)
         return {
-            "answer": _DEMO_RESPONSE,
+            "answer": demo.get("answer", _DEMO_RESPONSE),
             "conversation_id": body.conversation_id or "demo-conversation",
             "message_id": "demo-message",
             "tool_calls": [],
+            "map_command": demo.get("map_command"),
             "demo_mode": True,
         }
 
