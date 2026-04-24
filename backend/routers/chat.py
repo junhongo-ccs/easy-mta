@@ -127,13 +127,15 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
         if map_context.get("type") == "stop":
             routes = "、".join(map_context.get("routes") or [])
             accessible = "バリアフリー対応あり" if map_context.get("wheelchair_accessible") else "バリアフリー情報は要確認"
+            stop_name = map_context.get("stop_name") or map_context.get("name")
             return {
                 "answer": (
-                    f"**{map_context.get('stop_name') or map_context.get('name')}** のデモ案内です。\n\n"
+                    f"**{stop_name}** の停留所案内です。\n\n"
                     f"- 主な系統: {routes or '不明'}\n"
                     f"- エリア: {map_context.get('area', '未設定')}\n"
-                    f"- {accessible}\n\n"
-                    "本番ではGTFS-JPの停留所情報、接近情報、公式FAQを組み合わせて回答します。"
+                    f"- {accessible}\n"
+                    f"- 停留所ID: {map_context.get('stop_id')}\n\n"
+                    "地図上の停留所データをもとに表示しています。周辺の車両を知りたい場合は、この停留所名で「近くのバス」と聞いてください。"
                 ),
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
             }

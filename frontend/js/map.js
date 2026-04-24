@@ -71,15 +71,14 @@ const MapManager = (() => {
       `<span class="route-badge" style="background:${_routeColor(r)};color:${_routeTextColor(r)}">${r}</span>`
     ).join(' ');
     const accessible = stop.wheelchair_accessible === true
-      ? '<span class="accessible-icon" title="バリアフリー">♿</span>'
+      ? '<div class="popup-meta">バリアフリー対応あり</div>'
       : '';
     return `
       <div class="map-popup">
         <div class="popup-name">${stop.stop_name || stop.name || stop.stop_id}</div>
         <div class="popup-routes">${badges}</div>
         ${accessible}
-        <div class="popup-id">ID: ${stop.stop_id}</div>
-        <button class="popup-btn" onclick="MapManager.getStopInfo('${stop.stop_id}')">詳細を見る</button>
+        <div class="popup-meta popup-meta-sub">停留所ID: ${stop.stop_id}</div>
       </div>`;
   }
 
