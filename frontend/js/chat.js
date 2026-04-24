@@ -251,13 +251,15 @@ const ChatManager = (() => {
     }
   }
 
+  let _commandNoticeTimer = null;
+
   function _showCommandNotice(text) {
     const badge = document.getElementById('map-command-notice');
     if (!badge) return;
     badge.textContent = text;
     badge.classList.add('visible');
-    clearTimeout(badge._hideTimer);
-    badge._hideTimer = setTimeout(() => badge.classList.remove('visible'), 4000);
+    clearTimeout(_commandNoticeTimer);
+    _commandNoticeTimer = setTimeout(() => badge.classList.remove('visible'), 4000);
   }
 
   return {

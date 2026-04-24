@@ -8,6 +8,7 @@ const MapManager = (() => {
   let _alertLayer = null;
   let _allStops = [];
   let _activeFilter = null;
+  let _vehicleCounter = 0;
   let _realtimeTimer = null;
 
   // -------------------------------------------------------------------------
@@ -212,7 +213,7 @@ const MapManager = (() => {
       const lat = parseFloat(pos.latitude ?? pos.lat);
       const lng = parseFloat(pos.longitude ?? pos.lon ?? pos.lng);
       const routeId = trip.route_id || entity.route_id || v.route_id || '?';
-      const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id || Math.random().toString(36);
+      const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id || `vehicle-${++_vehicleCounter}`;
 
       if (isNaN(lat) || isNaN(lng)) return;
 

@@ -66,12 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ── Periodic real-time refresh ───────────────────────────────────────────
-  // MapManager handles its own polling, but we keep the status indicator
-  // in sync with a lightweight heartbeat here.
-  setInterval(() => {
-    MapManager.refreshRealtime();
-  }, CONFIG.REALTIME_INTERVAL);
+  // Note: MapManager already starts its own real-time polling interval
+  // internally via _startRealtimePolling(). No duplicate timer needed here.
 
   // ── Legend toggle ────────────────────────────────────────────────────────
   const legendToggle = document.getElementById('legend-toggle');
