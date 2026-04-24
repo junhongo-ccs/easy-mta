@@ -128,6 +128,42 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             routes = "、".join(map_context.get("routes") or [])
             accessible = "バリアフリー対応あり" if map_context.get("wheelchair_accessible") else "バリアフリー情報は要確認"
             stop_name = map_context.get("stop_name") or map_context.get("name")
+            wants_nearby = any(word in text for word in ["接近", "近く", "付近", "周辺", "走", "車両", "バス"])
+            if wants_nearby:
+                lat = map_context.get("stop_lat") or map_context.get("lat")
+                lng = map_context.get("stop_lon") or map_context.get("lng")
+                vehicles = []
+                if lat is not None and lng is not None:
+                    vehicles = await gtfs_realtime.search_nearby_vehicles(
+                        _api_key(),
+                        float(lat),
+                        float(lng),
+                        radius_m=900,
+                        limit=8,
+                    )
+                if vehicles:
+                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in vehicles[:5])
+                    nearest = vehicles[0]
+                    return {
+                        "answer": (
+                            f"**{stop_name}** 周辺で接近中・走行中の車両を見つけました。\n\n"
+                            f"{lines}\n\n"
+                            "地図は最も近い車両付近へ移動します。"
+                        ),
+                        "map_command": {
+                            "type": "focusOn",
+                            "lat": nearest["latitude"],
+                            "lng": nearest["longitude"],
+                            "zoom": 15,
+                        },
+                    }
+                return {
+                    "answer": f"**{stop_name}** 周辺では、現在の検索半径内に接近中・走行中の車両が見つかりませんでした。",
+                    "map_command": {
+                        "type": "highlightStop",
+                        "stop_id": map_context.get("stop_id"),
+                    },
+                }
             return {
                 "answer": (
                     f"**{stop_name}** の停留所案内です。\n\n"
@@ -135,7 +171,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     f"- エリア: {map_context.get('area', '未設定')}\n"
                     f"- {accessible}\n"
                     f"- 停留所ID: {map_context.get('stop_id')}\n\n"
-                    "地図上の停留所データをもとに表示しています。周辺を走行中の車両や利用できる系統も、この停留所を起点に案内できます。"
+                    "地図上の停留所データをもとに表示しています。この停留所について「接近中のバスを教えて」と聞くと、周辺の車両を確認できます。"
                 ),
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
             }

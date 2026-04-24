@@ -4,6 +4,7 @@
 const ChatManager = (() => {
   let _conversationId = null;
   let _isTyping = false;
+  let _lastMapContext = null;
 
   const WELCOME_MESSAGE =
     'こんにちは。**都バス運行案内サイト PoC** へようこそ。\n\n' +
@@ -52,6 +53,12 @@ const ChatManager = (() => {
 
   function _stripMapCommandBlock(text) {
     return text.replace(/```json\s*[\s\S]*?```/gi, '').trim();
+  }
+
+  function _shouldAttachLastMapContext(text) {
+    if (!_lastMapContext) return false;
+    if (_lastMapContext.type !== 'stop') return false;
+    return /接近|近く|付近|周辺|この停留所|ここ|バス|車両/.test(text);
   }
 
   // Basic markdown-like → HTML
@@ -147,6 +154,9 @@ const ChatManager = (() => {
       conversation_id: _conversationId || undefined,
       inputs: {},
     };
+    if (_shouldAttachLastMapContext(trimmed)) {
+      body.map_context = _lastMapContext;
+    }
 
     try {
       const res = await fetch(`${CONFIG.API_BASE}/api/chat/message`, {
@@ -170,6 +180,8 @@ const ChatManager = (() => {
   }
 
   function sendMapContext(context) {
+    _lastMapContext = context;
+
     const typeLabel = context.type === 'stop' ? '停留所' : '車両';
     const name = context.route_display_name || context.stop_name || context.name || context.id || JSON.stringify(context);
     const prompt = `この${typeLabel}について教えてください: **${name}**`;
