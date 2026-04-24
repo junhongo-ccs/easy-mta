@@ -87,6 +87,7 @@ const MapManager = (() => {
     const label = v.route_label || v.route_short_name || v.route_id;
     const color = _routeColor(label);
     const textColor = _routeTextColor(label);
+    const updated = _formatEpochJst(v.timestamp);
     return `
       <div class="map-popup">
         <div class="popup-name">
@@ -94,9 +95,8 @@ const MapManager = (() => {
           ${v.route_display_name || '都バス車両'}
         </div>
         ${v.destination ? `<div class="popup-meta">行先: ${v.destination}</div>` : ''}
-        <div class="popup-meta">方向: ${_directionLabel(v.direction_id)}</div>
-        <div class="popup-meta">状態: ${_statusLabel(v.current_status)}</div>
-        <button class="popup-btn" onclick="ChatManager.sendMapContext(${JSON.stringify(v).replace(/"/g, '&quot;')})">AIに質問</button>
+        <div class="popup-meta">車両ID: ${v.id}</div>
+        <div class="popup-meta">更新: ${updated}</div>
       </div>`;
   }
 

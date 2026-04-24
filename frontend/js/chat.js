@@ -171,8 +171,8 @@ const ChatManager = (() => {
 
   function sendMapContext(context) {
     const typeLabel = context.type === 'stop' ? '停留所' : '車両';
-    const name = context.stop_name || context.name || context.id || JSON.stringify(context);
-    const prompt = `この${typeLabel}について日本語で教えてください: **${name}**`;
+    const name = context.route_display_name || context.stop_name || context.name || context.id || JSON.stringify(context);
+    const prompt = `この${typeLabel}について教えてください: **${name}**`;
 
     // Add user-visible message
     addMessage('user', prompt);

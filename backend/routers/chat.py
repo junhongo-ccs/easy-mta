@@ -158,7 +158,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     f"- 状態: {map_context.get('current_status', '不明')}\n\n"
                     f"- データ: {source}\n"
                     f"- 位置情報タイムスタンプ: {timestamp}\n\n"
-                    "GTFS-RT VehiclePositionの車両位置に、ODPT BusroutePatternの表示名を重ねています。"
+                    "リアルタイム車両位置データに、系統名・行先情報を組み合わせて表示しています。"
                 )
             }
 
