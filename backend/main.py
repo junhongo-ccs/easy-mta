@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from routers import gtfs as gtfs_router
 from routers import chat as chat_router
+from routers import dify_tools as dify_tools_router
 from services import gtfs_static
 
 load_dotenv()
@@ -52,6 +53,7 @@ app.add_middleware(
 # API routers
 app.include_router(gtfs_router.router, prefix="/api/gtfs", tags=["GTFS"])
 app.include_router(chat_router.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(dify_tools_router.router, tags=["Dify"])
 
 
 # Serve the frontend static files if the directory exists
