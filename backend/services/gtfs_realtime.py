@@ -1,17 +1,21 @@
 """
 GTFS-Realtime service.
-Fetches live vehicle positions, trip updates, and service alerts from the MTA API.
-Falls back to realistic mock data when MTA_API_KEY is not configured.
+Fetches Toei Bus VehiclePosition data from ODPT and falls back to PoC mock data
+when the public feed cannot be reached.
 """
 
-import time
+import os
 import math
+import time
 import random
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 
-MTA_BASE_URL = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs"
+ODPT_PUBLIC_GTFS_RT_URL = "https://api-public.odpt.org/api/v4/gtfs/realtime/ToeiBus"
+ODPT_AUTH_GTFS_RT_URL = "https://api.odpt.org/api/v4/gtfs/realtime/ToeiBus"
+ODPT_BUSROUTE_PATTERN_URL = "https://api-public.odpt.org/api/v4/odpt:BusroutePattern"
 
 # Mock data delay/arrival constants
 _MOCK_MIN_DELAY_SECONDS = -60
@@ -20,56 +24,26 @@ _MOCK_MIN_DEPARTURE_DELAY = 0
 _MOCK_MAX_DEPARTURE_DELAY = 120
 _MOCK_MIN_ARRIVAL_OFFSET = 60
 _MOCK_MAX_ARRIVAL_OFFSET = 300
-
-# Feed suffixes for each route group
-_FEED_SUFFIXES: dict[str, str] = {
-    "ace":  "-ace",
-    "bdfm": "-bdfm",
-    "g":    "-g",
-    "jz":   "-jz",
-    "nqrw": "-nqrw",
-    "l":    "-l",
-    "1234567": "",   # default feed (numbered lines)
-    "si":   "-si",
-}
-
-_ROUTE_TO_FEED: dict[str, str] = {
-    "A": "-ace", "C": "-ace", "E": "-ace",
-    "B": "-bdfm", "D": "-bdfm", "F": "-bdfm", "M": "-bdfm",
-    "G": "-g",
-    "J": "-jz", "Z": "-jz",
-    "N": "-nqrw", "Q": "-nqrw", "R": "-nqrw", "W": "-nqrw",
-    "L": "-l",
-    "1": "", "2": "", "3": "", "4": "", "5": "", "6": "", "7": "",
-    "S": "",
-}
-
-
-def _feeds_for_routes(route_ids: Optional[list[str]]) -> set[str]:
-    """Determine the set of feed suffixes needed for the requested routes."""
-    if not route_ids:
-        return set(_FEED_SUFFIXES.values())
-    feeds: set[str] = set()
-    for r in route_ids:
-        suffix = _ROUTE_TO_FEED.get(r.upper())
-        if suffix is not None:
-            feeds.add(suffix)
-    return feeds or set(_FEED_SUFFIXES.values())
-
+_ROUTE_PATTERN_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": {}}
+_ROUTE_PATTERN_TTL_SECONDS = 3600
+_FULLWIDTH_TO_HALFWIDTH = str.maketrans(
+    "０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+)
 
 # ---------------------------------------------------------------------------
 # Mock data helpers
 # ---------------------------------------------------------------------------
 
 _MOCK_VEHICLE_BASE: list[dict] = [
-    {"trip_id": "mock-1-uptown", "route_id": "1", "stop_id": "120", "current_status": "IN_TRANSIT_TO", "latitude": 40.755, "longitude": -73.990, "vehicle_id": "1A01"},
-    {"trip_id": "mock-2-uptown", "route_id": "2", "stop_id": "229", "current_status": "STOPPED_AT",    "latitude": 40.776, "longitude": -73.982, "vehicle_id": "2A05"},
-    {"trip_id": "mock-4-downtown", "route_id": "4", "stop_id": "631", "current_status": "STOPPED_AT",  "latitude": 40.751, "longitude": -73.976, "vehicle_id": "4B12"},
-    {"trip_id": "mock-6-uptown", "route_id": "6", "stop_id": "621", "current_status": "IN_TRANSIT_TO", "latitude": 40.763, "longitude": -73.966, "vehicle_id": "6C03"},
-    {"trip_id": "mock-A-downtown", "route_id": "A", "stop_id": "A27", "current_status": "STOPPED_AT",  "latitude": 40.750, "longitude": -73.991, "vehicle_id": "AA09"},
-    {"trip_id": "mock-L-bklyn", "route_id": "L", "stop_id": "L06",  "current_status": "IN_TRANSIT_TO", "latitude": 40.717, "longitude": -73.957, "vehicle_id": "LL02"},
-    {"trip_id": "mock-N-queens", "route_id": "N", "stop_id": "N02",  "current_status": "STOPPED_AT",   "latitude": 40.775, "longitude": -73.912, "vehicle_id": "NA07"},
-    {"trip_id": "mock-7-queens", "route_id": "7", "stop_id": "702",  "current_status": "IN_TRANSIT_TO", "latitude": 40.748, "longitude": -73.870, "vehicle_id": "7D14"},
+    {"trip_id": "mock-to01-shibuya", "route_id": "都01", "stop_id": "toeibus-stop-003", "current_status": "IN_TRANSIT_TO", "latitude": 35.6612, "longitude": 139.7140, "vehicle_id": "B-T01-001", "direction_id": 0},
+    {"trip_id": "mock-to01-shimbashi", "route_id": "都01", "stop_id": "toeibus-stop-005", "current_status": "STOPPED_AT", "latitude": 35.6661, "longitude": 139.7585, "vehicle_id": "B-T01-014", "direction_id": 1},
+    {"trip_id": "mock-gyo10-toyosu", "route_id": "業10", "stop_id": "toeibus-stop-009", "current_status": "IN_TRANSIT_TO", "latitude": 35.6625, "longitude": 139.7835, "vehicle_id": "B-G10-006", "direction_id": 0},
+    {"trip_id": "mock-ka01-odaiba", "route_id": "海01", "stop_id": "toeibus-stop-010", "current_status": "IN_TRANSIT_TO", "latitude": 35.6412, "longitude": 139.7978, "vehicle_id": "B-K01-003", "direction_id": 1},
+    {"trip_id": "mock-to05-ginza", "route_id": "都05-1", "stop_id": "toeibus-stop-007", "current_status": "STOPPED_AT", "latitude": 35.6721, "longitude": 139.7660, "vehicle_id": "B-T05-021", "direction_id": 0},
+    {"trip_id": "mock-u23-asakusa", "route_id": "上23", "stop_id": "toeibus-stop-012", "current_status": "IN_TRANSIT_TO", "latitude": 35.7101, "longitude": 139.7974, "vehicle_id": "B-U23-010", "direction_id": 1},
+    {"trip_id": "mock-n13-kinshicho", "route_id": "錦13", "stop_id": "toeibus-stop-013", "current_status": "STOPPED_AT", "latitude": 35.6968, "longitude": 139.8148, "vehicle_id": "B-N13-018", "direction_id": 0},
+    {"trip_id": "mock-higashi22-tokyo", "route_id": "東22", "stop_id": "toeibus-stop-006", "current_status": "IN_TRANSIT_TO", "latitude": 35.6780, "longitude": 139.7772, "vehicle_id": "B-H22-004", "direction_id": 1},
 ]
 
 
@@ -114,33 +88,176 @@ def _mock_alerts() -> list[dict]:
     return [
         {
             "alert_id": "mock-alert-1",
-            "header_text": "1/2/3 trains delayed due to signal problems",
-            "description_text": "Expect delays of up to 15 minutes on the 1, 2, and 3 trains between 34 St-Penn Station and Times Sq-42 St.",
-            "affected_routes": ["1", "2", "3"],
+            "header_text": "都01 渋谷駅前方面に遅れ",
+            "description_text": "道路混雑のため、都01 渋谷駅前方面に5分から10分程度の遅れが出ています。",
+            "affected_routes": ["都01"],
             "effect": "SIGNIFICANT_DELAYS",
         },
         {
             "alert_id": "mock-alert-2",
-            "header_text": "A train service change this weekend",
-            "description_text": "A trains run express between 59 St-Columbus Circle and Jay St-MetroTech this weekend due to track maintenance.",
-            "affected_routes": ["A"],
+            "header_text": "東京ビッグサイト周辺でイベント開催",
+            "description_text": "東京ビッグサイト周辺でイベント開催のため、海01・都05-2で混雑が見込まれます。",
+            "affected_routes": ["海01", "都05-2"],
             "effect": "MODIFIED_SERVICE",
         },
     ]
 
 
-# ---------------------------------------------------------------------------
-# Live MTA API helpers
-# ---------------------------------------------------------------------------
-
-async def _fetch_feed(client: httpx.AsyncClient, api_key: str, suffix: str) -> bytes:
-    url = MTA_BASE_URL + suffix
-    response = await client.get(url, headers={"x-api-key": api_key}, timeout=10.0)
-    response.raise_for_status()
-    return response.content
+def _ssl_verify() -> bool:
+    return os.getenv("ODPT_SSL_VERIFY", "true").strip().lower() not in {"0", "false", "no"}
 
 
-def _parse_vehicles(feed_message, route_ids: Optional[list[str]]) -> list[dict]:
+def _odpt_feed_url(api_key: Optional[str]) -> tuple[str, dict[str, str]]:
+    configured_url = os.getenv("ODPT_GTFS_RT_URL", "").strip()
+    public_url = os.getenv("ODPT_PUBLIC_GTFS_RT_URL", "").strip() or ODPT_PUBLIC_GTFS_RT_URL
+
+    if configured_url:
+        url = configured_url
+    elif api_key:
+        url = ODPT_AUTH_GTFS_RT_URL
+    else:
+        url = public_url
+
+    params: dict[str, str] = {}
+    if api_key and urlparse(url).netloc == "api.odpt.org":
+        params["acl:consumerKey"] = api_key
+    return url, params
+
+
+async def _fetch_odpt_feed(api_key: Optional[str]) -> bytes:
+    url, params = _odpt_feed_url(api_key)
+    async with httpx.AsyncClient(verify=_ssl_verify(), timeout=20.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.content
+
+
+def _normalize_pattern_id(value: str | None) -> str:
+    if not value:
+        return ""
+    normalized = value.strip().lstrip("0")
+    return normalized or "0"
+
+
+def _normalize_route_text(value: str | None) -> str:
+    return (value or "").translate(_FULLWIDTH_TO_HALFWIDTH)
+
+
+def _pattern_key(pattern_id: str | None, direction_id: int | str | None = None) -> str:
+    pattern = _normalize_pattern_id(pattern_id)
+    direction = "" if direction_id is None else str(direction_id)
+    return f"{pattern}:{direction}"
+
+
+def _parse_trip_pattern_id(trip_id: str | None) -> str:
+    if not trip_id:
+        return ""
+    return _normalize_pattern_id(trip_id.split("-", 1)[0])
+
+
+def _parse_trip_direction_id(trip_id: str | None) -> str | None:
+    if not trip_id:
+        return None
+    parts = trip_id.split("-")
+    if len(parts) < 2:
+        return None
+    return parts[1] or None
+
+
+def _route_pattern_from_item(item: dict) -> tuple[str, dict] | None:
+    pattern = _normalize_pattern_id(str(item.get("odpt:pattern", "")))
+    direction = str(item.get("odpt:direction", ""))
+    title = _normalize_route_text(str(item.get("dc:title", "")).strip())
+    note = _normalize_route_text(str(item.get("odpt:note", "")).strip())
+    short_name = title.split(" ", 1)[0] if title else ""
+    origin = ""
+    destination = ""
+    if note:
+        parts = note.split(":")
+        if len(parts) >= 2:
+            short_name = parts[0] or short_name
+            if "→" in parts[1]:
+                origin, destination = parts[1].split("→", 1)
+    display_name = title or short_name
+    return _pattern_key(pattern, direction), {
+        "pattern_id": pattern,
+        "direction_id": direction,
+        "route_short_name": short_name,
+        "route_long_name": title,
+        "route_display_name": display_name,
+        "origin": origin,
+        "destination": destination,
+        "busroute": item.get("odpt:busroute"),
+    }
+
+
+async def _load_route_pattern_map(api_key: Optional[str]) -> dict[str, dict]:
+    now = time.time()
+    if now - float(_ROUTE_PATTERN_CACHE["loaded_at"]) < _ROUTE_PATTERN_TTL_SECONDS:
+        return _ROUTE_PATTERN_CACHE["items"]  # type: ignore[return-value]
+
+    url = os.getenv("ODPT_BUSROUTE_PATTERN_URL", "").strip() or ODPT_BUSROUTE_PATTERN_URL
+    params = {"odpt:operator": "odpt.Operator:Toei"}
+    if api_key and urlparse(url).netloc == "api.odpt.org":
+        params["acl:consumerKey"] = api_key
+
+    async with httpx.AsyncClient(verify=_ssl_verify(), timeout=20.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+    items: dict[str, dict] = {}
+    for item in data:
+        parsed = _route_pattern_from_item(item)
+        if parsed:
+            key, value = parsed
+            items[key] = value
+
+    _ROUTE_PATTERN_CACHE["loaded_at"] = now
+    _ROUTE_PATTERN_CACHE["items"] = items
+    return items
+
+
+def _metadata_for_vehicle(route_patterns: dict[str, dict], trip_id: str, direction_id: int | None) -> dict:
+    pattern_id = _parse_trip_pattern_id(trip_id)
+    pattern_direction = _parse_trip_direction_id(trip_id)
+    metadata = route_patterns.get(_pattern_key(pattern_id, pattern_direction))
+    if not metadata:
+        metadata = route_patterns.get(_pattern_key(pattern_id, direction_id))
+    if not metadata:
+        metadata = route_patterns.get(_pattern_key(pattern_id, None))
+    return metadata or {"pattern_id": pattern_id, "pattern_direction_id": pattern_direction}
+
+
+def _vehicle_route_matches(vehicle: dict, query: str) -> bool:
+    needle = _normalize_route_text(query).strip().lower()
+    if not needle:
+        return False
+    haystack = " ".join(str(vehicle.get(key, "")) for key in [
+        "route_id",
+        "route_short_name",
+        "route_long_name",
+        "route_display_name",
+        "destination",
+        "pattern_id",
+    ]).lower()
+    return needle in haystack
+
+
+def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _parse_vehicles(feed_message, route_ids: Optional[list[str]], route_patterns: dict[str, dict], feed_timestamp: int | None = None) -> list[dict]:
     try:
         from google.transit import gtfs_realtime_pb2  # type: ignore
     except ImportError:
@@ -155,77 +272,34 @@ def _parse_vehicles(feed_message, route_ids: Optional[list[str]]) -> list[dict]:
         if route_ids and route_id not in route_ids:
             continue
         pos = v.position
+        if not pos.latitude or not pos.longitude:
+            continue
+        trip_id = v.trip.trip_id
+        direction_id = v.trip.direction_id if v.trip.HasField("direction_id") else None
+        metadata = _metadata_for_vehicle(route_patterns, trip_id, direction_id)
         vehicles.append({
-            "trip_id": v.trip.trip_id,
+            "trip_id": trip_id,
             "route_id": route_id,
             "stop_id": v.stop_id,
             "current_status": gtfs_realtime_pb2.VehiclePosition.VehicleStopStatus.Name(v.current_status),
             "latitude": round(pos.latitude, 6),
             "longitude": round(pos.longitude, 6),
             "timestamp": v.timestamp,
-            "vehicle_id": v.vehicle.id,
+            "feed_timestamp": feed_timestamp,
+            "vehicle_id": v.vehicle.id or entity.id,
+            "vehicle_label": v.vehicle.label,
+            "direction_id": direction_id,
+            "source": "odpt",
+            **metadata,
         })
     return vehicles
 
 
-def _parse_trip_updates(feed_message, route_ids: Optional[list[str]]) -> list[dict]:
-    updates = []
-    for entity in feed_message.entity:
-        if not entity.HasField("trip_update"):
-            continue
-        tu = entity.trip_update
-        route_id = tu.trip.route_id
-        if route_ids and route_id not in route_ids:
-            continue
-        stu_list = []
-        for stu in tu.stop_time_update:
-            stu_list.append({
-                "stop_id": stu.stop_id,
-                "arrival_delay": stu.arrival.delay if stu.HasField("arrival") else None,
-                "departure_delay": stu.departure.delay if stu.HasField("departure") else None,
-                "arrival_time": stu.arrival.time if stu.HasField("arrival") else None,
-            })
-        updates.append({
-            "trip_id": tu.trip.trip_id,
-            "route_id": route_id,
-            "stop_time_updates": stu_list,
-        })
-    return updates
-
-
-def _parse_alerts(feed_message) -> list[dict]:
-    alerts = []
-    for entity in feed_message.entity:
-        if not entity.HasField("alert"):
-            continue
-        alert = entity.alert
-        header = next((t.text for t in alert.header_text.translation if t.language == "en"), "")
-        desc = next((t.text for t in alert.description_text.translation if t.language == "en"), "")
-        affected = [ie.route_id for ie in alert.informed_entity if ie.route_id]
-
-        try:
-            from google.transit import gtfs_realtime_pb2  # type: ignore
-            effect = gtfs_realtime_pb2.Alert.Effect.Name(alert.effect)
-        except Exception:
-            effect = str(alert.effect)
-
-        alerts.append({
-            "alert_id": entity.id,
-            "header_text": header,
-            "description_text": desc,
-            "affected_routes": affected,
-            "effect": effect,
-        })
-    return alerts
-
-
-async def _load_feed(api_key: str, suffix: str):
+async def _load_odpt_feed(api_key: Optional[str]):
     """Download and parse a single GTFS-RT feed. Returns the parsed FeedMessage."""
     from google.transit import gtfs_realtime_pb2  # type: ignore
 
-    async with httpx.AsyncClient() as client:
-        data = await _fetch_feed(client, api_key, suffix)
-
+    data = await _fetch_odpt_feed(api_key)
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(data)
     return feed
@@ -236,45 +310,53 @@ async def _load_feed(api_key: str, suffix: str):
 # ---------------------------------------------------------------------------
 
 async def get_vehicle_positions(api_key: Optional[str], route_ids: Optional[list[str]] = None) -> list[dict]:
-    if not api_key:
-        return _mock_vehicles(route_ids)
-
     try:
-        from google.transit import gtfs_realtime_pb2  # type: ignore
-        results: list[dict] = []
-        for suffix in _feeds_for_routes(route_ids):
-            feed = await _load_feed(api_key, suffix)
-            results.extend(_parse_vehicles(feed, route_ids))
-        return results
+        feed = await _load_odpt_feed(api_key)
+        route_patterns = await _load_route_pattern_map(api_key)
+        vehicles = _parse_vehicles(feed, route_ids, route_patterns, feed.header.timestamp or None)
+        return vehicles if vehicles else _mock_vehicles(route_ids)
     except Exception:
         return _mock_vehicles(route_ids)
+
+
+async def search_vehicles_by_route(api_key: Optional[str], query: str, limit: int = 20) -> list[dict]:
+    """Return live vehicles whose route metadata matches a user-facing route query."""
+    vehicles = await get_vehicle_positions(api_key)
+    matches = [v for v in vehicles if _vehicle_route_matches(v, query)]
+    matches.sort(key=lambda v: str(v.get("route_display_name") or v.get("route_short_name") or v.get("route_id")))
+    return matches[:limit]
+
+
+async def search_nearby_vehicles(
+    api_key: Optional[str],
+    lat: float,
+    lng: float,
+    radius_m: int = 800,
+    limit: int = 20,
+) -> list[dict]:
+    """Return live vehicles near the given point, sorted by distance."""
+    vehicles = await get_vehicle_positions(api_key)
+    nearby: list[dict] = []
+    for vehicle in vehicles:
+        try:
+            distance = _distance_m(lat, lng, float(vehicle["latitude"]), float(vehicle["longitude"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if distance <= radius_m:
+            nearby.append({**vehicle, "distance_m": round(distance)})
+
+    nearby.sort(key=lambda v: v["distance_m"])
+    return nearby[:limit]
 
 
 async def get_trip_updates(api_key: Optional[str], route_ids: Optional[list[str]] = None) -> list[dict]:
-    if not api_key:
-        return _mock_trip_updates(route_ids)
-
-    try:
-        results: list[dict] = []
-        for suffix in _feeds_for_routes(route_ids):
-            feed = await _load_feed(api_key, suffix)
-            results.extend(_parse_trip_updates(feed, route_ids))
-        return results
-    except Exception:
-        return _mock_trip_updates(route_ids)
+    # The Toei Bus public feed used in this PoC exposes VehiclePosition. TripUpdate
+    # will be wired separately if an ODPT feed/resource is selected for arrivals.
+    return _mock_trip_updates(route_ids)
 
 
 async def get_service_alerts(api_key: Optional[str]) -> list[dict]:
-    if not api_key:
-        return _mock_alerts()
-
-    try:
-        # Alerts are present in any feed; use the default numbered-lines feed
-        feed = await _load_feed(api_key, "")
-        alerts = _parse_alerts(feed)
-        return alerts if alerts else _mock_alerts()
-    except Exception:
-        return _mock_alerts()
+    return _mock_alerts()
 
 
 async def get_station_realtime(api_key: Optional[str], stop_id: str) -> dict:

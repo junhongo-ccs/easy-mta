@@ -1,0 +1,179 @@
+openapi: 3.0.3
+info:
+  title: Toei Bus Operation Guide PoC Tools
+  version: 0.1.0
+  description: Tools for searching live Toei Bus vehicle positions and PoC stop data.
+servers:
+  - url: http://host.docker.internal:8000
+    description: Local FastAPI server from Dify Docker
+  - url: http://127.0.0.1:8000
+    description: Local FastAPI server from local Dify
+paths:
+  /api/gtfs/stops/search:
+    get:
+      operationId: search_stops
+      summary: Search bus stops
+      description: Search PoC bus stops by stop name, area, or route label.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Stop name, area, or route query such as 都庁, 新宿, 東京駅.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of stops to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+      responses:
+        "200":
+          description: Matching stops.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stop"
+  /api/gtfs/realtime/vehicles/search:
+    get:
+      operationId: search_vehicles_by_route
+      summary: Search live vehicles by route
+      description: Search live ODPT GTFS-RT vehicles by user-facing route label, destination, or GTFS route_id.
+      parameters:
+        - name: route
+          in: query
+          required: true
+          description: Route label, destination, or internal route_id. Examples: 早77, 都01, 新宿駅西口, 147.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of vehicles to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 5
+      responses:
+        "200":
+          description: Matching live vehicles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Vehicle"
+  /api/gtfs/realtime/vehicles/nearby:
+    get:
+      operationId: search_nearby_vehicles
+      summary: Search live vehicles near a point
+      description: Search live ODPT GTFS-RT vehicles around a latitude/longitude point.
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Center latitude.
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          required: true
+          description: Center longitude.
+          schema:
+            type: number
+            format: double
+        - name: radius_m
+          in: query
+          required: false
+          description: Search radius in meters.
+          schema:
+            type: integer
+            minimum: 50
+            maximum: 5000
+            default: 900
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of vehicles to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 5
+      responses:
+        "200":
+          description: Nearby live vehicles sorted by distance.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/Vehicle"
+                    - type: object
+                      properties:
+                        distance_m:
+                          type: integer
+                          description: Distance from the search center in meters.
+components:
+  schemas:
+    Stop:
+      type: object
+      properties:
+        stop_id:
+          type: string
+        stop_name:
+          type: string
+        stop_lat:
+          type: number
+        stop_lon:
+          type: number
+        routes:
+          type: array
+          items:
+            type: string
+        wheelchair_accessible:
+          type: boolean
+        area:
+          type: string
+    Vehicle:
+      type: object
+      properties:
+        trip_id:
+          type: string
+        route_id:
+          type: string
+          description: Internal GTFS route_id.
+        route_short_name:
+          type: string
+          description: User-facing route name such as 早77.
+        route_display_name:
+          type: string
+          description: User-facing route and destination such as 早77 新宿駅西口行.
+        origin:
+          type: string
+        destination:
+          type: string
+        stop_id:
+          type: string
+        current_status:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        timestamp:
+          type: integer
+        feed_timestamp:
+          type: integer
+        vehicle_id:
+          type: string
+        source:
+          type: string

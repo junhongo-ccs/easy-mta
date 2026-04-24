@@ -3,7 +3,16 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   // ── Initialize core modules ──────────────────────────────────────────────
-  MapManager.init();
+  try {
+    MapManager.init();
+  } catch (e) {
+    console.error('[都バスPoC] 地図の初期化に失敗しました:', e);
+    const status = document.getElementById('status-indicator');
+    if (status) {
+      status.className = 'status-dot error';
+      status.title = '地図の初期化に失敗しました';
+    }
+  }
   ChatManager.init();
 
   // ── Chat input wiring ────────────────────────────────────────────────────
@@ -47,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         MapManager.filterStops(null);
         accessBtn.classList.remove('active');
-        accessBtn.title = 'バリアフリー駅のみ表示';
+        accessBtn.title = 'バリアフリー停留所のみ表示';
       }
     });
   }
@@ -73,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (legendToggle && legend) {
     legendToggle.addEventListener('click', () => {
       legend.classList.toggle('hidden');
-      legendToggle.textContent = legend.classList.contains('hidden') ? '凡例 ▲' : '凡例 ▼';
+      legendToggle.textContent = legend.classList.contains('hidden') ? '概要 ▲' : '概要 ▼';
     });
   }
 

@@ -1,5 +1,5 @@
 """
-Easy-MTA FastAPI application entry point.
+Toei Bus Guide PoC FastAPI application entry point.
 """
 
 import logging
@@ -34,8 +34,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Easy MTA",
-    description="NYC MTA real-time transit API with Dify LLM chat integration",
+    title="Toei Bus Guide PoC",
+    description="Toei Bus operation guide PoC with real-time vehicle map and Dify chat integration",
     version="0.1.0",
     lifespan=lifespan,
 )

@@ -1,131 +1,123 @@
-# 🗽 Easy MTA — ニューヨーク地下鉄リアルタイムガイド
+# 都バス運行案内サイト PoC
 
-ニューヨークMTAのオープンデータを活用し、左側にLeaflet.jsのGISマップ、右側にDifyベースのLLMチャットを配置した「シームレスなリアルタイム運行案内Webアプリケーション」のPoC（概念実証）です。
+都バス公式ホームページ提案に向けた、リアルタイム車両位置とAI案内の体験デモです。
 
-**対象ユーザー:** 英語でのナビゲーションに不慣れな日本人観光客
+左側にLeaflet.jsの地図、右側にDify連携を想定したチャットを配置し、利用者が自然文で停留所・系統・運行状況にアクセスできるイメージを示します。
 
----
+## 現在できること
 
-## 🌟 主な機能
+- 都バス風の停留所モック表示
+- ODPT GTFS-RT VehiclePosition による都バス実車両位置表示
+- 30秒ごとの車両位置更新
+- 停留所・車両クリックからチャット案内
+- チャットから地図操作
+  - 「都庁前付近を表示して」
+  - 「都01を見せて」
+  - 「バリアフリー停留所を表示して」
 
-### Chat → Map（Dify → マップ）
-Difyがユーザーの自然言語を解釈し、マップを操作します：
-- 「タイムズスクエア駅を表示して」→ 自動ズームイン
-- 「車椅子で乗れる駅は？」→ バリアフリー駅のみハイライト
-- 「Aトレインの駅を見せて」→ 路線フィルター
+## 今後の接続先
 
-### Map → Chat（マップ → Dify）
-マップ上の要素をクリックすると、AIが日本語で解説します：
-- 駅クリック → 路線・バリアフリー情報を日本語解説
-- 列車アイコンクリック → リアルタイム遅延・混雑情報
+- 公共交通オープンデータセンターの都バス GTFS/GTFS-JP 静的情報
+- 公共交通オープンデータセンターの都バス GTFS-RT VehiclePosition
+- Dify API
+- 公式FAQや問い合わせ導線のRAG
 
-### リアルタイムデータ
-- MTA GTFS-Realtimeから30秒ごとに車両位置を更新
-- 遅延・運休などのサービスアラートを表示
-- APIキーなしでもモックデータでデモ動作
+実装計画は [docs/toei-bus-dify-demo-plan.md](docs/toei-bus-dify-demo-plan.md) を参照してください。
 
----
+Dify Toolとして使うAPIは [docs/dify-tool-api.md](docs/dify-tool-api.md) を参照してください。
 
-## 🛠 技術スタック
+DifyへインポートするOpenAPI定義は [docs/dify-tools-openapi.yaml](docs/dify-tools-openapi.yaml)、アプリ用プロンプト案は [docs/dify-app-prompt.md](docs/dify-app-prompt.md) です。
 
-| 層 | 技術 |
-|---|---|
-| Backend | Python 3.12 + FastAPI |
-| Frontend | HTML/CSS/JavaScript + Leaflet.js 1.9 |
-| Map | OpenStreetMap tiles (無料) |
-| AI Chat | Dify API (self-hosted or cloud) |
-| RT Data | MTA GTFS-Realtime (protobuf) |
-| Deploy | Docker + docker-compose |
+## ローカル起動
 
----
-
-## 🚀 セットアップ
-
-### 前提条件
-- Docker + Docker Compose
-- （任意）MTA Developer API Key：https://api.mta.info/#/signup
-- （任意）Dify API Key
-
-### 手順
+Dockerが使える場合:
 
 ```bash
-# 1. リポジトリをクローン
-git clone https://github.com/junhongo-ccs/easy-mta.git
-cd easy-mta
-
-# 2. 環境変数ファイルを作成
 cp .env.example .env
-# .env を編集して MTA_API_KEY と DIFY_API_KEY を設定（任意）
-
-# 3. 起動
-docker-compose up --build
-
-# 4. ブラウザで開く
-open http://localhost:8000
+docker compose up --build
 ```
 
-**APIキーなし（デモモード）**: `.env` を編集しなくてもモックデータで動作します。
+Pythonで直接起動する場合:
 
----
-
-## 📁 プロジェクト構成
-
-```
-easy-mta/
-├── docker-compose.yml
-├── .env.example
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py                  # FastAPI アプリ
-│   ├── routers/
-│   │   ├── gtfs.py              # GTFS API エンドポイント
-│   │   └── chat.py              # Dify チャットプロキシ
-│   └── services/
-│       ├── gtfs_static.py       # GTFS 静的データ（駅・路線）
-│       └── gtfs_realtime.py     # MTA GTFS-Realtime 解析
-└── frontend/
-    ├── index.html               # メイン SPA
-    ├── css/style.css            # ダークトランジットテーマ
-    └── js/
-        ├── config.js            # 設定（路線カラーなど）
-        ├── map.js               # MapManager（Leaflet）
-        ├── chat.js              # ChatManager（Dify）
-        └── app.js               # アプリ起動・ワイヤリング
+```bash
+cp .env.example .env
+py -m venv .venv
+.\.venv\Scripts\python -m pip install -r backend\requirements.txt
+cd backend
+..\.venv\Scripts\python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
----
+ブラウザで開きます。
 
-## 🗺 API エンドポイント
+```text
+http://127.0.0.1:8000
+```
 
-| エンドポイント | 説明 |
+## Railwayデプロイ
+
+このリポジトリはRailway向けにルートの `Dockerfile` と `railway.json` を用意しています。
+
+手順:
+
+1. このブランチをGitHubへpush
+2. Railwayで `New Project` → `Deploy from GitHub repo`
+3. 対象リポジトリとブランチを選択
+4. Railwayがルートの `Dockerfile` でビルド
+5. Deploy後に生成される公開URLを確認
+
+Railway側の環境変数:
+
+```env
+ODPT_API_KEY=
+ODPT_PUBLIC_GTFS_RT_URL=https://api-public.odpt.org/api/v4/gtfs/realtime/ToeiBus
+ODPT_BUSROUTE_PATTERN_URL=https://api-public.odpt.org/api/v4/odpt:BusroutePattern
+ODPT_GTFS_RT_URL=
+ODPT_SSL_VERIFY=true
+DIFY_API_URL=https://api.dify.ai
+DIFY_API_KEY=
+```
+
+Railway上では原則 `ODPT_SSL_VERIFY=true` を使います。ローカルPCで証明書検証に失敗する場合のみ `.env` で `false` にしてください。
+
+Dify CloudでToolを登録する場合は、[docs/dify-tools-openapi.yaml](docs/dify-tools-openapi.yaml) の `servers.url` をRailwayの公開URLに変更してからインポートします。
+
+```yaml
+servers:
+  - url: https://your-app.up.railway.app
+```
+
+## 環境変数
+
+```env
+ODPT_API_KEY=
+DIFY_API_URL=https://api.dify.ai
+DIFY_API_KEY=
+```
+
+GTFS-RT VehiclePosition は、公開エンドポイント `https://api-public.odpt.org/api/v4/gtfs/realtime/ToeiBus` を利用します。
+
+このローカル環境でPythonの証明書検証に失敗する場合は、検証用に `.env` で `ODPT_SSL_VERIFY=false` を指定できます。本番や共有環境では `true` を使ってください。
+
+## 主なAPI
+
+| Endpoint | 説明 |
 |---|---|
-| `GET /api/gtfs/stops` | 全駅情報（緯度経度・路線・バリアフリー） |
-| `GET /api/gtfs/routes` | 全路線情報（カラーコード含む） |
-| `GET /api/gtfs/stops/{stop_id}` | 駅詳細＋リアルタイム到着情報 |
-| `GET /api/gtfs/realtime/vehicles` | 車両リアルタイム位置 |
-| `GET /api/gtfs/realtime/trip-updates` | 列車遅延・到着予測 |
-| `GET /api/gtfs/realtime/alerts` | サービスアラート |
-| `POST /api/chat/message` | Dify チャットプロキシ |
+| `GET /api/gtfs/stops` | 停留所一覧 |
+| `GET /api/gtfs/stops/search?q=都庁` | 停留所検索 |
+| `GET /api/gtfs/routes` | 系統一覧 |
+| `GET /api/gtfs/stops/{stop_id}` | 停留所詳細 |
+| `GET /api/gtfs/realtime/vehicles` | 車両位置 |
+| `GET /api/gtfs/realtime/vehicles/search?route=早77` | 系統・行先で車両検索 |
+| `GET /api/gtfs/realtime/vehicles/nearby?lat=35.689634&lng=139.692101` | 周辺車両検索 |
+| `GET /api/gtfs/realtime/alerts` | 運行アラート |
+| `POST /api/chat/message` | Difyチャットプロキシ |
 
----
+## データについて
 
-## 🎭 Dify マップコマンド
+現在の停留所データは提案用のモックです。車両位置はODPTのGTFS-RT VehiclePositionから取得します。
 
-Dify のレスポンスに以下の JSON ブロックを含めることで、マップを操作できます：
+都バスの実データ接続では、公共交通オープンデータセンターで提供される東京都交通局データの利用条件、ライセンス、クレジット表記を確認します。
 
-```json
-{"type": "focusOn", "lat": 40.7559, "lng": -73.9874, "zoom": 15}
-{"type": "filterAccessible"}
-{"type": "highlightStop", "stop_id": "127"}
-{"type": "showRoute", "route_id": "A"}
-{"type": "resetFilters"}
-```
+クレジット表示対象:
 
----
-
-## 📄 ライセンス
-
-MIT License
-
-データ提供: [MTA Open Data](https://api.mta.info/) / [OpenStreetMap](https://www.openstreetmap.org/copyright)
+- 東京都交通局・公共交通オープンデータ協議会

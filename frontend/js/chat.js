@@ -6,15 +6,14 @@ const ChatManager = (() => {
   let _isTyping = false;
 
   const WELCOME_MESSAGE =
-    'こんにちは！🗽 **Easy MTA** へようこそ！\n\n' +
-    '私はニューヨーク地下鉄のAIアシスタントです。\n\n' +
+    'こんにちは。**都バス運行案内サイト PoC** へようこそ。\n\n' +
+    '私は都バスの運行情報と停留所案内を支援するAIアシスタントです。\n\n' +
     '**できること:**\n' +
-    '- 駅情報や路線の案内\n' +
-    '- リアルタイム運行状況の説明\n' +
-    '- 地図の操作（「タイムズスクエア駅を表示して」等）\n' +
-    '- バリアフリー情報のご案内\n\n' +
-    '地図上の駅や列車をクリックすると、その情報を日本語でお伝えします！\n\n' +
-    '何でもお気軽にどうぞ 😊';
+    '- 停留所や系統の案内\n' +
+    '- リアルタイム車両位置の説明\n' +
+    '- 地図の操作（「都庁前付近を表示して」等）\n' +
+    '- バリアフリー情報や問い合わせ導線の案内\n\n' +
+    '地図上の停留所や車両をクリックすると、その情報を日本語でお伝えします。';
 
   // -------------------------------------------------------------------------
   // Internal helpers
@@ -171,7 +170,7 @@ const ChatManager = (() => {
   }
 
   function sendMapContext(context) {
-    const typeLabel = context.type === 'stop' ? '駅' : '列車';
+    const typeLabel = context.type === 'stop' ? '停留所' : '車両';
     const name = context.stop_name || context.name || context.id || JSON.stringify(context);
     const prompt = `この${typeLabel}について日本語で教えてください: **${name}**`;
 
@@ -232,7 +231,7 @@ const ChatManager = (() => {
         break;
       case 'filterAccessible':
         MapManager.filterStops(stop => stop.wheelchair_accessible === true);
-        _showCommandNotice('♿ バリアフリー駅のみ表示中');
+        _showCommandNotice('バリアフリー停留所のみ表示中');
         break;
       case 'highlightStop':
         MapManager.highlightStop(cmd.stop_id);
@@ -241,11 +240,28 @@ const ChatManager = (() => {
         MapManager.filterStops(stop =>
           (stop.routes || []).includes(cmd.route_id)
         );
-        _showCommandNotice(`🚇 ${cmd.route_id} 路線の駅を表示中`);
+        _showCommandNotice(`${cmd.route_id} 系統の停留所を表示中`);
         break;
       case 'resetFilters':
         MapManager.filterStops(null);
-        _showCommandNotice('🗺️ すべての駅を表示中');
+        if (MapManager.clearVehicleFilter) MapManager.clearVehicleFilter();
+        _showCommandNotice('すべての停留所を表示中');
+        break;
+      case 'filterVehiclesByRoute':
+        if (MapManager.filterVehicles) {
+          MapManager.filterVehicles({
+            route_short_name: cmd.route_short_name,
+            route_id: cmd.route_id,
+            destination: cmd.destination,
+          });
+          _showCommandNotice(`${cmd.route_short_name || cmd.route_id || '指定'} の車両を表示中`);
+        }
+        break;
+      case 'resetVehicleFilters':
+        if (MapManager.clearVehicleFilter) {
+          MapManager.clearVehicleFilter();
+          _showCommandNotice('すべての車両を表示中');
+        }
         break;
       default:
         console.warn('[ChatManager] 不明なマップコマンド:', cmd);
