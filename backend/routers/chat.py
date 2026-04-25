@@ -180,8 +180,6 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
             }
         if map_context.get("type") == "vehicle":
-            source = "ODPT実データ" if map_context.get("source") == "odpt" else "モックデータ"
-            timestamp = _format_epoch_jst(map_context.get("timestamp"))
             route_label = (
                 map_context.get("route_display_name")
                 or map_context.get("route_short_name")
@@ -198,9 +196,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     f"{route_note}"
                     f"{destination}"
                     f"- 状態: {map_context.get('current_status', '不明')}\n\n"
-                    f"- データ: {source}\n"
-                    f"- 位置情報タイムスタンプ: {timestamp}\n\n"
-                    "リアルタイム車両位置データに、系統名・行先情報を組み合わせて表示しています。"
+                    "必要なら、この車両の更新時刻やデータ種別も案内できます。"
                 )
             }
 
