@@ -130,6 +130,29 @@ const ChatManager = (() => {
     return id ? `${context.type}:${id}` : null;
   }
 
+  function _applyVehicleIdFilter(vehicleIds, options = {}) {
+    if (!window.MapManager?.filterVehicles) return;
+    const ids = Array.isArray(vehicleIds) ? vehicleIds.filter(Boolean) : [];
+
+    const applyFilter = () => {
+      MapManager.filterVehicles({ vehicle_ids: ids });
+      const visible = MapManager.getVisibleVehicleCount ? MapManager.getVisibleVehicleCount() : ids.length;
+      const notice = visible === ids.length
+        ? `${visible}台の車両だけ表示中`
+        : `${ids.length}台中${visible}台を表示中`;
+      _showCommandNotice(notice);
+      if (typeof options.lat === 'number' && typeof options.lng === 'number') {
+        MapManager.focusOn(options.lat, options.lng, options.zoom || 15);
+      }
+    };
+
+    if (MapManager.refreshRealtime) {
+      MapManager.refreshRealtime().finally(applyFilter);
+      return;
+    }
+    applyFilter();
+  }
+
   // Basic markdown-like → HTML
   function formatMessage(text) {
     // Escape HTML
@@ -311,8 +334,7 @@ const ChatManager = (() => {
 
     const vehicleIds = _extractVehicleIds(answer);
     if (vehicleIds.length > 0 && window.MapManager?.filterVehicles) {
-      MapManager.filterVehicles({ vehicle_ids: vehicleIds });
-      _showCommandNotice(`${vehicleIds.length}台の車両だけ表示中`);
+      _applyVehicleIdFilter(vehicleIds);
     }
 
     if (answer) addMessage('assistant', answer);
@@ -355,13 +377,7 @@ const ChatManager = (() => {
         }
         break;
       case 'filterVehiclesByIds':
-        if (MapManager.filterVehicles) {
-          MapManager.filterVehicles({ vehicle_ids: cmd.vehicle_ids || [] });
-          _showCommandNotice(`${(cmd.vehicle_ids || []).length}台の車両だけ表示中`);
-          if (typeof cmd.lat === 'number' && typeof cmd.lng === 'number') {
-            MapManager.focusOn(cmd.lat, cmd.lng, cmd.zoom || 15);
-          }
-        }
+        _applyVehicleIdFilter(cmd.vehicle_ids || [], { lat: cmd.lat, lng: cmd.lng, zoom: cmd.zoom });
         break;
       case 'resetVehicleFilters':
         if (MapManager.clearVehicleFilter) {

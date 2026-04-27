@@ -287,7 +287,6 @@ def _context_as_prompt(message: str, map_context: Optional[dict[str, Any]]) -> s
         routes = "、".join(map_context.get("routes") or [])
         fields = {
             "停留所名": map_context.get("stop_name") or map_context.get("name"),
-            "停留所ID": map_context.get("stop_id"),
             "エリア": map_context.get("area"),
             "主な系統": routes,
             "緯度": map_context.get("stop_lat") or map_context.get("lat"),
@@ -390,8 +389,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     f"**{stop_name}** の停留所案内です。\n\n"
                     f"- 主な系統: {routes or '不明'}\n"
                     f"- エリア: {map_context.get('area', '未設定')}\n"
-                    f"- {accessible}\n"
-                    f"- 停留所ID: {map_context.get('stop_id')}\n\n"
+                    f"- {accessible}\n\n"
                     "地図上の停留所データをもとに表示しています。この停留所について「接近中のバスを教えて」と聞くと、周辺の車両を確認できます。"
                 ),
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},

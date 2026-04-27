@@ -86,7 +86,6 @@ const MapManager = (() => {
         <div class="popup-name">${stop.stop_name || stop.name || stop.stop_id}</div>
         <div class="popup-routes">${badges}</div>
         ${accessible}
-        <div class="popup-meta popup-meta-sub">停留所ID: ${stop.stop_id}</div>
       </div>`;
   }
 
@@ -360,6 +359,10 @@ const MapManager = (() => {
     loadVehicles(_allVehicles);
   }
 
+  function getVisibleVehicleCount() {
+    return Object.keys(_vehicleMarkers).length;
+  }
+
   function loadAlerts(alerts) {
     _alertLayer.clearLayers();
 
@@ -448,6 +451,7 @@ const MapManager = (() => {
     refreshRealtime,
     filterVehicles,
     clearVehicleFilter,
+    getVisibleVehicleCount,
     getMap,
   };
 })();
