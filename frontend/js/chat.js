@@ -71,13 +71,55 @@ const ChatManager = (() => {
     return Array.from(ids);
   }
 
+  function _hasExplicitContextReference(text, contextType) {
+    if (contextType === 'vehicle') {
+      return /(このバス|この車両|この便|選択したバス|選択中のバス|同じバス|同じ車両|この系統)/.test(text);
+    }
+    if (contextType === 'stop') {
+      return /(この停留所|このバス停|選択した停留所|選択中の停留所|同じ停留所|ここ)/.test(text);
+    }
+    return false;
+  }
+
+  function _isBroadNearbySearch(text) {
+    return /(周辺|近く|付近|最寄|周り|周囲|一覧|ほか|他の|別の|探して|教えて|表示して).*(バス|車両|停留所)|((駅|停留所|バス停).*(周辺|近く|付近))/.test(text);
+  }
+
+  function _normalizeForLooseMatch(value) {
+    return String(value || '')
+      .replace(/\s+/g, '')
+      .replace(/(停留所|バス停)/g, '')
+      .trim();
+  }
+
+  function _mentionsVehicleContextPlace(text, context) {
+    if (!context || context.type !== 'vehicle') return false;
+    const normalizedText = _normalizeForLooseMatch(text);
+    const candidates = [
+      context.next_stop_name,
+      context.current_stop_name,
+      context.stop_name,
+      context.destination,
+    ]
+      .map(_normalizeForLooseMatch)
+      .filter(name => name && name.length >= 2);
+
+    return candidates.some(name => normalizedText.includes(name));
+  }
+
   function _shouldAttachLastMapContext(text) {
     if (!_lastMapContext) return false;
+    if (_hasExplicitContextReference(text, _lastMapContext.type)) return true;
+    if (_mentionsVehicleContextPlace(text, _lastMapContext) && /(周辺|近く|付近|最寄|周り|周囲|探して|教えて|表示して)/.test(text)) {
+      return true;
+    }
+    if (_isBroadNearbySearch(text)) return false;
+
     if (_lastMapContext.type === 'stop') {
-      return /接近|近く|付近|周辺|この停留所|ここ|バス|車両/.test(text);
+      return /接近|到着|何分|次のバス|時刻|同じ停留所|一番近|最も近|最寄|近い/.test(text);
     }
     if (_lastMapContext.type === 'vehicle') {
-      return /同じ|このバス|この車両|系統|行先|行き先|バス|車両/.test(text);
+      return /同じ|系統|行先|行き先|現在地|どこを走|次の停留所|遅延|何分/.test(text);
     }
     return false;
   }
@@ -316,6 +358,9 @@ const ChatManager = (() => {
         if (MapManager.filterVehicles) {
           MapManager.filterVehicles({ vehicle_ids: cmd.vehicle_ids || [] });
           _showCommandNotice(`${(cmd.vehicle_ids || []).length}台の車両だけ表示中`);
+          if (typeof cmd.lat === 'number' && typeof cmd.lng === 'number') {
+            MapManager.focusOn(cmd.lat, cmd.lng, cmd.zoom || 15);
+          }
         }
         break;
       case 'resetVehicleFilters':

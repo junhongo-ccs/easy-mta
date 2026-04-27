@@ -249,6 +249,23 @@ html, body {
   line-height: 1;
 }
 
+.leaflet-tooltip.destination-chip-tooltip {
+  background: rgba(55, 65, 81, 0.94);
+  color: #f3f4f6;
+  border: 1px solid rgba(156, 163, 175, 0.42);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.35);
+  padding: 4px 10px;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.leaflet-tooltip.destination-chip-tooltip::before {
+  display: none;
+}
+
 /* ── Alert Pulse ───────────────────────────────────────── */
 .alert-pulse {
   display: block;

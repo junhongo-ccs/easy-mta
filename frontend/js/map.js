@@ -55,7 +55,7 @@ const MapManager = (() => {
     });
   }
 
-  function _makeVehicleIcon(routeId) {
+  function _makeVehicleIcon(routeId, tooltipText = '') {
     const label = _normalizeRouteLabel(routeId);
     const color = _routeColor(label);
     const textColor = _routeTextColor(label);
@@ -70,7 +70,7 @@ const MapManager = (() => {
 
   function _makeVehicleIconForVehicle(v, highlighted = false) {
     const label = v.route_label || v.route_short_name || v.route_display_name || v.route_id || '?';
-    return _makeVehicleIcon(label, highlighted);
+    return _makeVehicleIcon(label, _destinationChipText(v));
   }
 
   function _stopPopupHTML(stop) {
@@ -112,6 +112,12 @@ const MapManager = (() => {
         <div class="popup-meta popup-meta-sub">車両ID: ${v.id}</div>
         <div class="popup-meta popup-meta-sub">更新: ${updated}</div>
       </div>`;
+  }
+
+  function _destinationChipText(v) {
+    const destination = String(v.destination || '').trim();
+    if (!destination) return '行先情報なし';
+    return destination.endsWith(' 行') ? destination : `${destination} 行`;
   }
 
   function _statusLabel(s) {
@@ -313,10 +319,26 @@ const MapManager = (() => {
       if (!normalized) return;
       if (!_vehicleMatchesFilter(normalized, _activeVehicleFilter)) return;
 
-      const marker = L.marker([normalized.lat, normalized.lng], { icon: _makeVehicleIconForVehicle(normalized) });
+      const destinationTooltip = _destinationChipText(normalized);
+      const marker = L.marker([normalized.lat, normalized.lng], {
+        icon: _makeVehicleIconForVehicle(normalized),
+        riseOnHover: true,
+        interactive: true,
+      });
       marker._vehicleData = normalized;
       marker.bindPopup(_vehiclePopupHTML(normalized), { maxWidth: 260 });
+      marker.bindTooltip(destinationTooltip, {
+        direction: 'top',
+        offset: [0, -14],
+        opacity: 1,
+        className: 'destination-chip-tooltip',
+        permanent: false,
+        sticky: true,
+      });
+      marker.on('mouseover', () => marker.openTooltip());
+      marker.on('mouseout', () => marker.closeTooltip());
       marker.on('click', () => {
+        marker.closeTooltip();
         if (window.ChatManager) ChatManager.sendMapContext({ type: 'vehicle', ...normalized });
       });
       marker.addTo(_map);

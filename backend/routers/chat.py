@@ -5,6 +5,7 @@ Prefix: /api/chat
 
 import os
 import re
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
@@ -20,6 +21,7 @@ _FULLWIDTH_TO_HALFWIDTH = str.maketrans(
     "０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ－",
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-",
 )
+_ETA_ASSUMED_SPEED_KMH = float(os.getenv("ETA_ASSUMED_SPEED_KMH", "12"))
 
 _DEMO_RESPONSE = (
     "現在はDify未接続のデモモードです。\n\n"
@@ -105,6 +107,51 @@ def _destination_label(destination: Any) -> str:
     return text if text.endswith(" 行") else f"{text} 行"
 
 
+def _normalize_destination_text(text: Any) -> str:
+    normalized = str(text or "").replace(" ", "").replace("　", "").strip()
+    normalized = re.sub(r"(行き|行)$", "", normalized)
+    return normalized
+
+
+def _destination_matches_any(vehicle_destination: Any, candidates: list[str]) -> bool:
+    destination = _normalize_destination_text(vehicle_destination)
+    if not destination:
+        return False
+    for candidate in candidates:
+        normalized_candidate = _normalize_destination_text(candidate)
+        if not normalized_candidate:
+            continue
+        if (
+            normalized_candidate == destination
+            or normalized_candidate in destination
+            or destination in normalized_candidate
+        ):
+            return True
+    return False
+
+
+def _rough_eta_minutes(distance_m: Any) -> Optional[int]:
+    try:
+        distance = float(distance_m)
+    except (TypeError, ValueError):
+        return None
+    speed_m_per_min = max(_ETA_ASSUMED_SPEED_KMH, 1.0) * 1000.0 / 60.0
+    return max(1, int(math.ceil(distance / speed_m_per_min)))
+
+
+def _vehicle_identifier(vehicle: dict[str, Any]) -> Optional[str]:
+    return str(vehicle.get("id") or vehicle.get("vehicle_id") or "").strip() or None
+
+
+def _display_route_label(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return text
+    text = re.sub(r"\s*[（(][A-Za-z]{1,3}\d{1,3}[）)]", "", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return text
+
+
 def _normalize_destination_notation(text: str) -> str:
     if not text:
         return text
@@ -134,6 +181,9 @@ def _wants_nearby_vehicles(text: str) -> bool:
         return True
     return any(word in text for word in ["近く", "付近", "周辺"]) and any(word in text for word in ["来る", "いる", "探", "教えて"])
 
+def _has_proximity_phrase(text: str) -> bool:
+    return any(word in text for word in ["近く", "付近", "周辺", "最寄", "周り", "周囲"])
+
 
 def _wants_same_route_vehicles(text: str) -> bool:
     if "同系統" in text or "同一系統" in text:
@@ -147,6 +197,26 @@ def _wants_same_destination_vehicles(text: str) -> bool:
 
 def _is_vehicle_context_prompt(text: str) -> bool:
     return text.startswith("この車両について教えてください")
+
+def _normalize_place_label(text: Any) -> str:
+    return str(text or "").replace(" ", "").replace("　", "").replace("停留所", "").replace("バス停", "").strip()
+
+
+def _mentions_vehicle_context_place(text: str, map_context: dict[str, Any]) -> bool:
+    normalized_text = _normalize_place_label(text)
+    if not normalized_text:
+        return False
+    candidates = [
+        map_context.get("next_stop_name"),
+        map_context.get("current_stop_name"),
+        map_context.get("stop_name"),
+        map_context.get("destination"),
+    ]
+    for candidate in candidates:
+        label = _normalize_place_label(candidate)
+        if label and len(label) >= 2 and label in normalized_text:
+            return True
+    return False
 
 
 def _vehicle_status_label(status: Any) -> str:
@@ -173,7 +243,8 @@ def _vehicle_stop_status_sentence(status: Any, next_stop_name: Any, current_stop
 
 
 def _vehicle_line(vehicle: dict, include_distance: bool = False) -> str:
-    route = vehicle.get("route_short_name") or vehicle.get("route_display_name") or f"{vehicle.get('route_id')}系統"
+    route_raw = vehicle.get("route_short_name") or vehicle.get("route_display_name") or f"{vehicle.get('route_id')}系統"
+    route = _display_route_label(route_raw)
     destination = f" / {_destination_label(vehicle.get('destination'))}" if vehicle.get("destination") else ""
     distance = f" / 約{vehicle.get('distance_m')}m" if include_distance and vehicle.get("distance_m") is not None else ""
     return f"- **{route}**{destination}{distance}"
@@ -242,6 +313,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             accessible = "バリアフリー対応あり" if map_context.get("wheelchair_accessible") else "バリアフリー情報は要確認"
             stop_name = map_context.get("stop_name") or map_context.get("name")
             wants_nearby = _wants_nearby_vehicles(text)
+            destination_candidates = _destination_candidates(text)
             if wants_nearby:
                 lat = map_context.get("stop_lat") or map_context.get("lat")
                 lng = map_context.get("stop_lon") or map_context.get("lng")
@@ -254,9 +326,44 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                         radius_m=900,
                         limit=8,
                     )
+                if destination_candidates and vehicles:
+                    destination_vehicles = [
+                        v for v in vehicles if _destination_matches_any(v.get("destination"), destination_candidates)
+                    ]
+                    if destination_vehicles:
+                        nearest = destination_vehicles[0]
+                        eta_min = _rough_eta_minutes(nearest.get("distance_m"))
+                        route_raw = nearest.get("route_short_name") or nearest.get("route_display_name") or nearest.get("route_id") or "対象系統"
+                        route = _display_route_label(route_raw)
+                        destination_label = _destination_label(nearest.get("destination") or destination_candidates[0])
+                        eta_label = f"約{eta_min}分" if eta_min is not None else "数分"
+                        return {
+                            "answer": (
+                                f"**{stop_name}** 周辺で、**{destination_label}** の最寄り車両は "
+                                f"**{route}**（約{nearest.get('distance_m')}m）です。\n\n"
+                                f"到着まで **{eta_label}**（目安）です。"
+                            ),
+                            "map_command": {
+                                "type": "filterVehiclesByIds",
+                                "vehicle_ids": [vid for vid in [_vehicle_identifier(nearest)] if vid],
+                                "lat": nearest["latitude"],
+                                "lng": nearest["longitude"],
+                                "zoom": 15,
+                            },
+                        }
+                    requested = _destination_label(destination_candidates[0])
+                    return {
+                        "answer": f"**{stop_name}** 周辺では、現在 **{requested}** の車両が見つかりませんでした。",
+                        "map_command": {
+                            "type": "highlightStop",
+                            "stop_id": map_context.get("stop_id"),
+                        },
+                    }
                 if vehicles:
-                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in vehicles[:5])
-                    nearest = vehicles[0]
+                    shown = vehicles[:5]
+                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in shown)
+                    nearest = shown[0]
+                    shown_ids = [vid for vid in (_vehicle_identifier(v) for v in shown) if vid]
                     return {
                         "answer": (
                             f"**{stop_name}** 周辺で接近中・走行中の車両を見つけました。\n\n"
@@ -264,7 +371,8 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                             "地図は最も近い車両付近へ移動します。"
                         ),
                         "map_command": {
-                            "type": "focusOn",
+                            "type": "filterVehiclesByIds",
+                            "vehicle_ids": shown_ids,
                             "lat": nearest["latitude"],
                             "lng": nearest["longitude"],
                             "zoom": 15,
@@ -289,8 +397,62 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                 "map_command": {"type": "highlightStop", "stop_id": map_context.get("stop_id")},
             }
         if map_context.get("type") == "vehicle":
-            route_label = map_context.get("route_short_name") or map_context.get("route_display_name") or f"{map_context.get('route_id')}系統"
+            route_label_raw = map_context.get("route_short_name") or map_context.get("route_display_name") or f"{map_context.get('route_id')}系統"
+            route_label = _display_route_label(route_label_raw)
             destination = _destination_label(map_context.get("destination"))
+            wants_nearby = _wants_nearby_vehicles(text) and _has_proximity_phrase(text)
+            lat = map_context.get("lat") or map_context.get("latitude")
+            lng = map_context.get("lng") or map_context.get("longitude")
+            if (
+                wants_nearby
+                and lat is not None
+                and lng is not None
+                and (_mentions_vehicle_context_place(text, map_context) or "このバス" in text or "この車両" in text)
+            ):
+                vehicles = await gtfs_realtime.search_nearby_vehicles(
+                    _api_key(),
+                    float(lat),
+                    float(lng),
+                    radius_m=900,
+                    limit=8,
+                )
+                selected_vehicle_id = str(map_context.get("id") or map_context.get("vehicle_id") or "")
+                nearby = [v for v in vehicles if str(_vehicle_identifier(v) or "") != selected_vehicle_id]
+                if nearby:
+                    shown = nearby[:5]
+                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in shown)
+                    center = shown[0]
+                    shown_ids = [vid for vid in (_vehicle_identifier(v) for v in shown) if vid]
+                    anchor_name = (
+                        map_context.get("next_stop_name")
+                        or map_context.get("current_stop_name")
+                        or map_context.get("stop_name")
+                        or destination
+                        or route_label
+                    )
+                    return {
+                        "answer": (
+                            f"**{anchor_name}** 周辺で走行中の車両を見つけました。\n\n"
+                            f"{lines}\n\n"
+                            "地図は最も近い車両付近へ移動します。"
+                        ),
+                        "map_command": {
+                            "type": "filterVehiclesByIds",
+                            "vehicle_ids": shown_ids,
+                            "lat": center["latitude"],
+                            "lng": center["longitude"],
+                            "zoom": 15,
+                        },
+                    }
+                return {
+                    "answer": "現在の検索半径内では、周辺の他車両が見つかりませんでした。",
+                    "map_command": {
+                        "type": "focusOn",
+                        "lat": float(lat),
+                        "lng": float(lng),
+                        "zoom": 15,
+                    },
+                }
             if not _is_vehicle_context_prompt(text):
                 for candidate in _destination_candidates(text):
                     vehicles, found_destination = await _search_destination_vehicles(candidate)
@@ -392,8 +554,10 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                     limit=8,
                 )
                 if vehicles:
-                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in vehicles[:5])
-                    nearest = vehicles[0]
+                    shown = vehicles[:5]
+                    lines = "\n".join(_vehicle_line(v, include_distance=True) for v in shown)
+                    nearest = shown[0]
+                    shown_ids = [vid for vid in (_vehicle_identifier(v) for v in shown) if vid]
                     return {
                         "answer": (
                             f"**{stop['stop_name']}** から約900m以内を走行中の車両を見つけました。\n\n"
@@ -401,7 +565,8 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                             "地図は最も近い車両付近へ移動します。"
                         ),
                         "map_command": {
-                            "type": "focusOn",
+                            "type": "filterVehiclesByIds",
+                            "vehicle_ids": shown_ids,
                             "lat": nearest["latitude"],
                             "lng": nearest["longitude"],
                             "zoom": 15,
@@ -434,7 +599,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
         if vehicles:
             lines = "\n".join(_vehicle_line(v) for v in vehicles[:5])
             first = vehicles[0]
-            route_label = first.get("route_short_name") or candidate
+            route_label = _display_route_label(first.get("route_short_name") or candidate)
             return {
                 "answer": (
                     f"**{route_label}** に該当する走行中の車両を見つけました。\n\n"
