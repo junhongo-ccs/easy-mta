@@ -57,6 +57,15 @@ const ChatManager = (() => {
     return text.replace(/```json\s*[\s\S]*?```/gi, '').trim();
   }
 
+  function _sanitizeUserFacingAnswer(text) {
+    if (!text) return text;
+    const withoutInternalStopId = text
+      .replace(/(?:^|\n)[-•]?\s*停留所ID\s*[:：]\s*[^\n]*/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return withoutInternalStopId;
+  }
+
   function _extractVehicleIds(text) {
     const ids = new Set();
     const patterns = [
@@ -337,6 +346,7 @@ const ChatManager = (() => {
       _applyVehicleIdFilter(vehicleIds);
     }
 
+    answer = _sanitizeUserFacingAnswer(answer);
     if (answer) addMessage('assistant', answer);
   }
 
