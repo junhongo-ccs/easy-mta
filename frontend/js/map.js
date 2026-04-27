@@ -389,6 +389,11 @@ const MapManager = (() => {
     _map.flyTo([lat, lng], nextZoom, { duration: 1.2 });
   }
 
+  function closePopups() {
+    if (!_map) return;
+    _map.closePopup();
+  }
+
   function filterStops(filterFn) {
     _activeFilter = filterFn;
     Object.values(_stopMarkers).forEach(marker => {
@@ -445,6 +450,7 @@ const MapManager = (() => {
     loadVehicles,
     loadAlerts,
     focusOn,
+    closePopups,
     filterStops,
     highlightStop,
     getStopInfo,

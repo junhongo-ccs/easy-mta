@@ -614,6 +614,15 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
 
     for route in gtfs_static.get_routes():
         if route["route_id"] in text:
+            wants_stop_view = any(word in text for word in ["停留所", "バス停", "乗り場"])
+            if not wants_stop_view:
+                return {
+                    "answer": f"**{route['route_id']}** の走行中車両を表示します。",
+                    "map_command": {
+                        "type": "filterVehiclesByRoute",
+                        "route_short_name": route["route_id"],
+                    },
+                }
             return {
                 "answer": f"**{route['route_name']}** の停留所を地図上に絞り込みます。",
                 "map_command": {"type": "showRoute", "route_id": route["route_id"]},

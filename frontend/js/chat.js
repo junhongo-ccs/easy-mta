@@ -387,6 +387,9 @@ const ChatManager = (() => {
         }
         break;
       case 'filterVehiclesByIds':
+        if (MapManager.closePopups) {
+          MapManager.closePopups();
+        }
         _applyVehicleIdFilter(cmd.vehicle_ids || [], { lat: cmd.lat, lng: cmd.lng, zoom: cmd.zoom });
         break;
       case 'resetVehicleFilters':
