@@ -6,19 +6,17 @@ const ChatManager = (() => {
   let _isTyping = false;
   let _lastMapContext = null;
 
-  const WELCOME_MESSAGE =
-    '**都バス運行案内サイト PoC** です。\n\n' +
+  const WELCOME_MESSAGES = [
+    '**都バス運行案内サイト PoC** です。',
     '試せる質問:\n\n' +
-    '「東京駅丸の内南口について教えて」\n' +
-    '「この停留所の接近中のバスを教えて」\n' +
-    '「早77の現在位置を教えて」\n' +
-    '「都05-1を地図で見せて」\n' +
-    '「新宿駅西口行きの車両を探して」\n' +
-    '「都庁前付近のバスを表示して」\n' +
-    '「この車両はどこ行き？」\n' +
-    '「バリアフリー対応の停留所を表示して」\n' +
-    '「絞り込みを解除して」\n\n' +
-    '停留所や車両をクリックすると、その情報をもとに続けて質問できます。';
+    '「東京駅周辺に移動して」\n' +
+    '「新宿駅西口 行のバスを表示して」\n' +
+    '「都05-1だけ表示して」\n' +
+    '「銀座四丁目に接近中のバス」\n' +
+    '「絞り込みを解除して」',
+    '停留所や車両をクリックすると、その情報をもとに続けて質問できます。',
+    'バス表示は、上部の「全バスを表示」ボタンで元に戻ります。',
+  ];
 
   // -------------------------------------------------------------------------
   // Internal helpers
@@ -79,6 +77,12 @@ const ChatManager = (() => {
     return /接近|近く|付近|周辺|この停留所|ここ|バス|車両/.test(text);
   }
 
+  function _contextKey(context) {
+    if (!context || !context.type) return null;
+    const id = context.id || context.vehicle_id || context.stop_id || context.name;
+    return id ? `${context.type}:${id}` : null;
+  }
+
   // Basic markdown-like → HTML
   function formatMessage(text) {
     // Escape HTML
@@ -114,7 +118,7 @@ const ChatManager = (() => {
   // -------------------------------------------------------------------------
 
   function init() {
-    addMessage('assistant', WELCOME_MESSAGE);
+    WELCOME_MESSAGES.forEach(message => addMessage('assistant', message));
   }
 
   function addMessage(role, text) {
@@ -198,6 +202,16 @@ const ChatManager = (() => {
   }
 
   function sendMapContext(context) {
+    const currentKey = _contextKey(context);
+    if (context.type === 'vehicle' && currentKey && currentKey === _contextKey(_lastMapContext)) {
+      if (window.MapManager?.clearVehicleFilter) {
+        MapManager.clearVehicleFilter();
+      }
+      _lastMapContext = null;
+      _showCommandNotice('すべての車両を表示中');
+      return;
+    }
+
     _lastMapContext = context;
 
     const typeLabel = context.type === 'stop' ? '停留所' : '車両';
@@ -263,7 +277,7 @@ const ChatManager = (() => {
 
     switch (cmd.type) {
       case 'focusOn':
-        MapManager.focusOn(cmd.lat, cmd.lng, cmd.zoom);
+        MapManager.focusOn(cmd.lat, cmd.lng, cmd.zoom, { preserveZoom: cmd.preserve_zoom === true });
         break;
       case 'filterAccessible':
         MapManager.filterStops(stop => stop.wheelchair_accessible === true);
@@ -290,7 +304,7 @@ const ChatManager = (() => {
             route_id: cmd.route_id,
             destination: cmd.destination,
           });
-          _showCommandNotice(`${cmd.route_short_name || cmd.route_id || '指定'} の車両を表示中`);
+          _showCommandNotice(`${cmd.destination ? `${cmd.destination} 行` : (cmd.route_short_name || cmd.route_id || '指定')} の車両を表示中`);
         }
         break;
       case 'filterVehiclesByIds':
@@ -337,6 +351,7 @@ const ChatManager = (() => {
     addMessage,
     showTyping,
     hideTyping,
+    showCommandNotice: _showCommandNotice,
     formatMessage,
   };
 })();

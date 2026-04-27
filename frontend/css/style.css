@@ -116,6 +116,26 @@ html, body {
   stroke-linejoin: round;
 }
 
+.text-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+.text-btn:hover {
+  background: var(--bg-panel);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Main Layout ───────────────────────────────────────── */

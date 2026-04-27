@@ -67,15 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ── New conversation button ───────────────────────────────────────────────
-  const newChatBtn = document.getElementById('new-chat-btn');
-  if (newChatBtn) {
-    newChatBtn.addEventListener('click', () => {
-      const area = document.getElementById('chat-messages');
-      if (area) area.innerHTML = '';
+  // ── Vehicle display reset button ─────────────────────────────────────────
+  const showAllBusesBtn = document.getElementById('show-all-buses-btn');
+  if (showAllBusesBtn) {
+    showAllBusesBtn.addEventListener('click', () => {
       if (MapManager.clearVehicleFilter) MapManager.clearVehicleFilter();
-      MapManager.filterStops(null);
-      ChatManager.reset();
+      if (ChatManager.showCommandNotice) ChatManager.showCommandNotice('すべての車両を表示中');
     });
   }
 });

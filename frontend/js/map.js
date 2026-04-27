@@ -91,13 +91,16 @@ const MapManager = (() => {
     const titleText = v.route_short_name && title.startsWith(v.route_short_name)
       ? title.slice(v.route_short_name.length).trim()
       : title;
+    const destinationLabel = v.destination?.trim().endsWith(' 行')
+      ? v.destination.trim()
+      : `${v.destination} 行`;
     return `
       <div class="map-popup">
         <div class="popup-name">
           <span class="route-badge" style="background:${color};color:${textColor}">${label}</span>
           ${titleText}
         </div>
-        ${v.destination ? `<div class="popup-meta">行先: ${v.destination}</div>` : ''}
+        ${v.destination ? `<div class="popup-meta">${destinationLabel}</div>` : ''}
         <div class="popup-meta popup-meta-sub">車両ID: ${v.id}</div>
         <div class="popup-meta popup-meta-sub">更新: ${updated}</div>
       </div>`;
@@ -340,9 +343,10 @@ const MapManager = (() => {
     });
   }
 
-  function focusOn(lat, lng, zoom) {
+  function focusOn(lat, lng, zoom, options = {}) {
     if (!_map) return;
-    _map.flyTo([lat, lng], zoom || 15, { duration: 1.2 });
+    const nextZoom = options.preserveZoom ? _map.getZoom() : (zoom ?? 15);
+    _map.flyTo([lat, lng], nextZoom, { duration: 1.2 });
   }
 
   function filterStops(filterFn) {

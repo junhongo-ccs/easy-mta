@@ -7,7 +7,7 @@ from typing import Optional
 
 # Toei Bus PoC stops: representative central Tokyo stops with route assignments.
 _STOPS: list[dict] = [
-    {"stop_id": "toeibus-stop-001", "stop_name": "都庁第一本庁舎", "stop_lat": 35.689634, "stop_lon": 139.692101, "routes": ["都01", "宿75"], "wheelchair_accessible": True, "area": "新宿"},
+    {"stop_id": "toeibus-stop-001", "stop_name": "都庁第一本庁舎", "stop_lat": 35.689634, "stop_lon": 139.692101, "routes": ["都01", "宿75"], "wheelchair_accessible": True, "area": "新宿", "aliases": ["都庁前", "都庁", "東京都庁"]},
     {"stop_id": "toeibus-stop-002", "stop_name": "新宿駅西口", "stop_lat": 35.690921, "stop_lon": 139.699347, "routes": ["都01", "宿74", "宿75"], "wheelchair_accessible": True, "area": "新宿"},
     {"stop_id": "toeibus-stop-003", "stop_name": "渋谷駅前", "stop_lat": 35.658034, "stop_lon": 139.701636, "routes": ["都01", "渋66"], "wheelchair_accessible": True, "area": "渋谷"},
     {"stop_id": "toeibus-stop-004", "stop_name": "六本木駅前", "stop_lat": 35.662836, "stop_lon": 139.731443, "routes": ["都01", "反96"], "wheelchair_accessible": True, "area": "港"},
@@ -74,6 +74,7 @@ def search_stops(query: str, limit: int = 10) -> list[dict]:
             stop.get("stop_name", ""),
             stop.get("area", ""),
             " ".join(stop.get("routes", [])),
+            " ".join(stop.get("aliases", [])),
         ])
         aliases = [
             haystack,

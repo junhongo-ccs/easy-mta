@@ -16,6 +16,10 @@ from services import gtfs_static, gtfs_realtime
 
 router = APIRouter()
 JST = timezone(timedelta(hours=9))
+_FULLWIDTH_TO_HALFWIDTH = str.maketrans(
+    "０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ－",
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-",
+)
 
 _DEMO_RESPONSE = (
     "現在はDify未接続のデモモードです。\n\n"
@@ -73,9 +77,66 @@ def _route_candidates(text: str) -> list[str]:
     return result
 
 
+def _destination_candidates(text: str) -> list[str]:
+    patterns = [
+        r"([一-龠ぁ-んァ-ヶA-Za-z0-9・ー]+?(?:駅前|駅|西口|東口|南口|北口|車庫|操車所|庁舎|病院|学校|公園|センター|ターミナル))\s*行(?:き)?",
+    ]
+    seen: set[str] = set()
+    result: list[str] = []
+    for pattern in patterns:
+        for candidate in re.findall(pattern, text):
+            candidate = candidate.strip()
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                result.append(candidate)
+    return result
+
+
+def _normalize_user_text(text: str) -> str:
+    normalized = (text or "").translate(_FULLWIDTH_TO_HALFWIDTH)
+    return re.sub(r"(?<=\d)ー(?=\d)", "-", normalized)
+
+
+def _destination_label(destination: Any) -> str:
+    text = str(destination or "").strip()
+    if not text:
+        return ""
+    return text if text.endswith(" 行") else f"{text} 行"
+
+
+def _normalize_destination_notation(text: str) -> str:
+    if not text:
+        return text
+
+    def replace_label(match: re.Match[str]) -> str:
+        destination = match.group(1).strip()
+        destination = re.sub(r"(?:\s*行|行き)$", "", destination)
+        return _destination_label(destination)
+
+    normalized = re.sub(r"行先\s*[:：]\s*([^\n、。/]+)", replace_label, text)
+    normalized = re.sub(r"(?:目的地|行き先)は\s*([^\n、。/]+)", replace_label, normalized)
+    normalized = re.sub(
+        r"([一-龠ぁ-んァ-ヶA-Za-z0-9・ー]+?(?:駅前|駅|西口|東口|南口|北口|車庫|操車所|庁舎|病院|学校|公園|センター|ターミナル))行き",
+        lambda match: _destination_label(match.group(1)),
+        normalized,
+    )
+    normalized = re.sub(
+        r"([一-龠ぁ-んァ-ヶA-Za-z0-9・ー]+?(?:駅前|駅|西口|東口|南口|北口|車庫|操車所|庁舎|病院|学校|公園|センター|ターミナル))行(?![一-龠ぁ-んァ-ヶA-Za-z0-9])",
+        lambda match: _destination_label(match.group(1)),
+        normalized,
+    )
+    return normalized
+
+
+def _wants_nearby_vehicles(text: str) -> bool:
+    if any(word in text for word in ["接近", "走行", "車両", "バス"]):
+        return True
+    return any(word in text for word in ["近く", "付近", "周辺"]) and any(word in text for word in ["来る", "いる", "探", "教えて"])
+
+
 def _vehicle_line(vehicle: dict, include_distance: bool = False) -> str:
-    route = vehicle.get("route_display_name") or vehicle.get("route_short_name") or f"{vehicle.get('route_id')}系統"
-    destination = f" / 行先: {vehicle.get('destination')}" if vehicle.get("destination") else ""
+    route = vehicle.get("route_short_name") or vehicle.get("route_display_name") or f"{vehicle.get('route_id')}系統"
+    destination = f" / {_destination_label(vehicle.get('destination'))}" if vehicle.get("destination") else ""
     distance = f" / 約{vehicle.get('distance_m')}m" if include_distance and vehicle.get("distance_m") is not None else ""
     return f"- **{route}** 車両ID: {vehicle.get('vehicle_id')}{destination}{distance}"
 
@@ -125,14 +186,14 @@ def _context_as_prompt(message: str, map_context: Optional[dict[str, Any]]) -> s
 
 
 async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) -> dict[str, Any]:
-    text = message.strip()
+    text = _normalize_user_text(message).strip()
 
     if map_context:
         if map_context.get("type") == "stop":
             routes = "、".join(map_context.get("routes") or [])
             accessible = "バリアフリー対応あり" if map_context.get("wheelchair_accessible") else "バリアフリー情報は要確認"
             stop_name = map_context.get("stop_name") or map_context.get("name")
-            wants_nearby = any(word in text for word in ["接近", "近く", "付近", "周辺", "走", "車両", "バス"])
+            wants_nearby = _wants_nearby_vehicles(text)
             if wants_nearby:
                 lat = map_context.get("stop_lat") or map_context.get("lat")
                 lng = map_context.get("stop_lon") or map_context.get("lng")
@@ -188,7 +249,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             route_note = ""
             if map_context.get("route_short_name") and map_context.get("route_id"):
                 route_note = f"- GTFS route_id: {map_context.get('route_id')}\n"
-            destination = f"- 行先: {map_context.get('destination')}\n" if map_context.get("destination") else ""
+            destination = f"- {_destination_label(map_context.get('destination'))}\n" if map_context.get("destination") else ""
             return {
                 "answer": (
                     f"**{route_label}** の車両案内です。\n\n"
@@ -200,6 +261,23 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                 )
             }
 
+    for candidate in _destination_candidates(text):
+        vehicles = await gtfs_realtime.search_vehicles_by_route(_api_key(), candidate, limit=8)
+        if vehicles:
+            lines = "\n".join(_vehicle_line(v) for v in vehicles[:5])
+            destination = vehicles[0].get("destination") or candidate
+            return {
+                "answer": (
+                    f"**{_destination_label(destination)}** の走行中車両を見つけました。\n\n"
+                    f"{lines}\n\n"
+                    "地図上ではこの行先の車両だけを表示します。"
+                ),
+                "map_command": {
+                    "type": "filterVehiclesByRoute",
+                    "destination": destination,
+                },
+            }
+
     for stop in gtfs_static.get_stops():
         aliases = [
             stop["stop_name"],
@@ -207,9 +285,10 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             stop["stop_name"].replace("第一本庁舎", ""),
             stop["stop_name"].replace("丸の内南口", ""),
             stop.get("area", ""),
+            *(stop.get("aliases") or []),
         ]
         if any(alias and alias in text for alias in aliases):
-            wants_nearby = any(word in text for word in ["近く", "付近", "周辺", "走", "車両", "バス"])
+            wants_nearby = _wants_nearby_vehicles(text)
             if wants_nearby:
                 vehicles = await gtfs_realtime.search_nearby_vehicles(
                     _api_key(),
@@ -246,13 +325,13 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             return {
                 "answer": (
                     f"**{stop['stop_name']}** 付近を表示します。\n\n"
-                    "この停留所を起点に、周辺を走行中の車両や利用できる系統を案内する想定です。"
+                    "現在の拡大率はそのまま、地図の中心だけを移動します。"
                 ),
                 "map_command": {
                     "type": "focusOn",
                     "lat": stop["stop_lat"],
                     "lng": stop["stop_lon"],
-                    "zoom": 15,
+                    "preserve_zoom": True,
                 },
             }
 
@@ -288,7 +367,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
             "map_command": {"type": "filterAccessible"},
         }
 
-    if "リセット" in text or "全て" in text or "すべて" in text:
+    if "リセット" in text or "全て" in text or "すべて" in text or "絞り込みを解除" in text:
         return {
             "answer": "地図の絞り込みを解除します。",
             "map_command": {"type": "resetFilters"},
@@ -302,12 +381,13 @@ async def send_message(body: ChatRequest):
     """Proxy a chat message to Dify and return the response."""
     dify_url = _dify_url()
     dify_key = _dify_key()
+    normalized_message = _normalize_user_text(body.message)
 
     if not dify_url or not dify_key:
         # Demo mode — return canned Japanese response
-        demo = await _demo_response(body.message, body.map_context)
+        demo = await _demo_response(normalized_message, body.map_context)
         return {
-            "answer": demo.get("answer", _DEMO_RESPONSE),
+            "answer": _normalize_destination_notation(demo.get("answer", _DEMO_RESPONSE)),
             "conversation_id": body.conversation_id or "demo-conversation",
             "message_id": "demo-message",
             "tool_calls": [],
@@ -316,9 +396,9 @@ async def send_message(body: ChatRequest):
         }
 
     if body.map_context:
-        context_answer = await _demo_response(body.message, body.map_context)
+        context_answer = await _demo_response(normalized_message, body.map_context)
         return {
-            "answer": context_answer.get("answer", ""),
+            "answer": _normalize_destination_notation(context_answer.get("answer", "")),
             "conversation_id": body.conversation_id,
             "message_id": "local-map-context",
             "tool_calls": [],
@@ -327,12 +407,24 @@ async def send_message(body: ChatRequest):
             "demo_mode": False,
         }
 
+    local_answer = await _demo_response(normalized_message, None)
+    if local_answer.get("map_command"):
+        return {
+            "answer": _normalize_destination_notation(local_answer.get("answer", "")),
+            "conversation_id": body.conversation_id,
+            "message_id": "local-supported-query",
+            "tool_calls": [],
+            "map_command": local_answer.get("map_command"),
+            "dify_mode": "local_supported_query",
+            "demo_mode": False,
+        }
+
     # Build the Dify blocking chat-messages payload
     inputs = dict(body.inputs or {})
     if body.map_context:
         inputs["map_context"] = body.map_context
 
-    enriched_query = _context_as_prompt(body.message, body.map_context)
+    enriched_query = _context_as_prompt(normalized_message, body.map_context)
 
     chat_payload: dict[str, Any] = {
         "query": enriched_query,
@@ -421,7 +513,7 @@ async def send_message(body: ChatRequest):
                 tool_calls.append(msg)
 
     return {
-        "answer": answer,
+        "answer": _normalize_destination_notation(answer),
         "conversation_id": conversation_id,
         "message_id": message_id,
         "tool_calls": tool_calls,
