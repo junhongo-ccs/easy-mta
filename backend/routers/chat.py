@@ -147,6 +147,7 @@ def _display_route_label(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return text
+    text = re.sub(r"[ー－−﹣―‐‑‒–—]", "-", text)
     text = re.sub(r"\s*[（(][A-Za-z]{1,3}\d{1,3}[）)]", "", text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text
