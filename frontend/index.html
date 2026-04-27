@@ -58,7 +58,7 @@
         </div>
         <div class="legend-meta" id="feed-time">取得時刻: --</div>
         <div class="legend-meta">ODPT GTFS-RT VehiclePosition</div>
-        <div class="legend-note">車両をクリックすると系統名・行先・更新時刻を確認できます。</div>
+        <div class="legend-note">車両をクリックすると系統名・行先・現在向かっている停留所を確認できます。</div>
       </div>
       <button id="legend-toggle">概要 ▼</button>
     </div>
@@ -111,8 +111,8 @@
 
 <!-- App modules (order matters) -->
 <script src="js/config.js"></script>
-<script src="js/map.js?v=bus-label-clean"></script>
-<script src="js/chat.js"></script>
+<script src="js/map.js?v=no-vehicle-tooltip"></script>
+<script src="js/chat.js?v=same-route-context"></script>
 <script src="js/app.js"></script>
 
 </body>

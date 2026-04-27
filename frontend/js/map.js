@@ -62,7 +62,7 @@ const MapManager = (() => {
     const width = Math.max(38, Math.min(64, (label.length * 10) + 10));
     return L.divIcon({
       className: '',
-      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};" title="${label}">${label}</div>`,
+      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};">${label}</div>`,
       iconSize: [width, 26],
       iconAnchor: [width / 2, 13],
     });
@@ -280,6 +280,10 @@ const MapManager = (() => {
       route_label: routeLabel,
       destination: v.destination,
       pattern_id: v.pattern_id,
+      stop_id: v.stop_id,
+      stop_name: v.stop_name,
+      next_stop_name: v.next_stop_name,
+      current_stop_name: v.current_stop_name,
       trip_id: trip.trip_id || entity.trip_id || v.trip_id,
       direction_id: trip.direction_id ?? entity.direction_id ?? v.direction_id,
       current_status: entity.current_status || v.current_status,

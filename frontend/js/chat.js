@@ -73,8 +73,13 @@ const ChatManager = (() => {
 
   function _shouldAttachLastMapContext(text) {
     if (!_lastMapContext) return false;
-    if (_lastMapContext.type !== 'stop') return false;
-    return /接近|近く|付近|周辺|この停留所|ここ|バス|車両/.test(text);
+    if (_lastMapContext.type === 'stop') {
+      return /接近|近く|付近|周辺|この停留所|ここ|バス|車両/.test(text);
+    }
+    if (_lastMapContext.type === 'vehicle') {
+      return /同じ|このバス|この車両|系統|行先|行き先|バス|車両/.test(text);
+    }
+    return false;
   }
 
   function _contextKey(context) {

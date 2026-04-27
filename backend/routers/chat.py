@@ -80,6 +80,7 @@ def _route_candidates(text: str) -> list[str]:
 def _destination_candidates(text: str) -> list[str]:
     patterns = [
         r"([一-龠ぁ-んァ-ヶA-Za-z0-9・ー]+?(?:駅前|駅|西口|東口|南口|北口|車庫|操車所|庁舎|病院|学校|公園|センター|ターミナル))\s*行(?:き)?",
+        r"([一-龠ぁ-んァ-ヶA-Za-z0-9・ー]{2,20})\s*行(?:き)?(?:の)?(?:バス|車両)",
     ]
     seen: set[str] = set()
     result: list[str] = []
@@ -134,7 +135,22 @@ def _wants_nearby_vehicles(text: str) -> bool:
     return any(word in text for word in ["近く", "付近", "周辺"]) and any(word in text for word in ["来る", "いる", "探", "教えて"])
 
 
+def _wants_same_route_vehicles(text: str) -> bool:
+    if "同系統" in text or "同一系統" in text:
+        return True
+    return "同じ" in text and any(word in text for word in ["系統", "路線", "バス", "車両"])
+
+
+def _wants_same_destination_vehicles(text: str) -> bool:
+    return "同じ" in text and any(word in text for word in ["行先", "行き先", "行", "方面"])
+
+
+def _is_vehicle_context_prompt(text: str) -> bool:
+    return text.startswith("この車両について教えてください")
+
+
 def _vehicle_status_label(status: Any) -> str:
+    # Fallback used when the GTFS-RT stop_id cannot be resolved to a stop name.
     labels = {
         "INCOMING_AT": "停留所に接近しています",
         "STOPPED_AT": "停留所に停車中です",
@@ -143,11 +159,34 @@ def _vehicle_status_label(status: Any) -> str:
     return labels.get(str(status or ""), "運行中です")
 
 
+def _vehicle_stop_status_sentence(status: Any, next_stop_name: Any, current_stop_name: Any) -> str:
+    status_text = str(status or "")
+    next_name = str(next_stop_name or "").strip()
+    current_name = str(current_stop_name or "").strip()
+    if status_text == "STOPPED_AT" and current_name:
+        return f"現在は **{current_name}** に停車中です。"
+    if status_text == "INCOMING_AT" and next_name:
+        return f"現在は **{next_name}** に接近しています。"
+    if status_text == "IN_TRANSIT_TO" and next_name:
+        return f"現在は **{next_name}** へ向かっています。"
+    return f"現在は{_vehicle_status_label(status)}。"
+
+
 def _vehicle_line(vehicle: dict, include_distance: bool = False) -> str:
     route = vehicle.get("route_short_name") or vehicle.get("route_display_name") or f"{vehicle.get('route_id')}系統"
     destination = f" / {_destination_label(vehicle.get('destination'))}" if vehicle.get("destination") else ""
     distance = f" / 約{vehicle.get('distance_m')}m" if include_distance and vehicle.get("distance_m") is not None else ""
-    return f"- **{route}** 車両ID: {vehicle.get('vehicle_id')}{destination}{distance}"
+    return f"- **{route}**{destination}{distance}"
+
+
+async def _search_destination_vehicles(candidate: str, limit: int = 8) -> tuple[list[dict], str]:
+    vehicles = await gtfs_realtime.search_vehicles_by_route(_api_key(), candidate, limit=20)
+    exact_matches = [v for v in vehicles if str(v.get("destination") or "").strip() == candidate]
+    if exact_matches:
+        return exact_matches[:limit], candidate
+    if vehicles:
+        return vehicles[:limit], str(vehicles[0].get("destination") or candidate)
+    return [], candidate
 
 
 def _context_as_prompt(message: str, map_context: Optional[dict[str, Any]]) -> str:
@@ -252,12 +291,49 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
         if map_context.get("type") == "vehicle":
             route_label = map_context.get("route_short_name") or map_context.get("route_display_name") or f"{map_context.get('route_id')}系統"
             destination = _destination_label(map_context.get("destination"))
+            if not _is_vehicle_context_prompt(text):
+                for candidate in _destination_candidates(text):
+                    vehicles, found_destination = await _search_destination_vehicles(candidate)
+                    if vehicles:
+                        lines = "\n".join(_vehicle_line(v) for v in vehicles[:5])
+                        return {
+                            "answer": (
+                                f"**{_destination_label(found_destination)}** の走行中車両を見つけました。\n\n"
+                                f"{lines}\n\n"
+                                "地図上ではこの行先の車両だけを表示します。"
+                            ),
+                            "map_command": {
+                                "type": "filterVehiclesByRoute",
+                                "destination": found_destination,
+                            },
+                        }
+            if _wants_same_route_vehicles(text):
+                return {
+                    "answer": f"**{route_label}** と同じ系統のバスを表示します。",
+                    "map_command": {
+                        "type": "filterVehiclesByRoute",
+                        "route_short_name": map_context.get("route_short_name"),
+                        "route_id": map_context.get("route_id"),
+                    },
+                }
+            if _wants_same_destination_vehicles(text) and map_context.get("destination"):
+                return {
+                    "answer": f"**{destination}** のバスを表示します。",
+                    "map_command": {
+                        "type": "filterVehiclesByRoute",
+                        "destination": map_context.get("destination"),
+                    },
+                }
             destination_sentence = (
                 f"このバスは **{route_label}** の **{destination}** です。"
                 if destination
                 else f"このバスは **{route_label}** です。行先情報は現在確認中です。"
             )
-            status_sentence = _vehicle_status_label(map_context.get("current_status"))
+            status_sentence = _vehicle_stop_status_sentence(
+                map_context.get("current_status"),
+                map_context.get("next_stop_name") or map_context.get("stop_name"),
+                map_context.get("current_stop_name") or map_context.get("stop_name"),
+            )
             map_command = {
                 "type": "filterVehiclesByRoute",
                 "destination": map_context.get("destination"),
@@ -268,7 +344,7 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
                 "answer": (
                     "選択したバスの案内です。\n\n"
                     f"{destination_sentence}\n"
-                    f"現在は{status_sentence}。\n\n"
+                    f"{status_sentence}\n\n"
                     "「全バスを表示」と入力してもバス表示を初期化できます。"
                 ),
                 "map_command": map_command,
@@ -281,10 +357,9 @@ async def _demo_response(message: str, map_context: Optional[dict[str, Any]]) ->
         }
 
     for candidate in _destination_candidates(text):
-        vehicles = await gtfs_realtime.search_vehicles_by_route(_api_key(), candidate, limit=8)
+        vehicles, destination = await _search_destination_vehicles(candidate)
         if vehicles:
             lines = "\n".join(_vehicle_line(v) for v in vehicles[:5])
-            destination = vehicles[0].get("destination") or candidate
             return {
                 "answer": (
                     f"**{_destination_label(destination)}** の走行中車両を見つけました。\n\n"
