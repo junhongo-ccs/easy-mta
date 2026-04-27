@@ -17,8 +17,9 @@ const MapManager = (() => {
   // -------------------------------------------------------------------------
 
   function _routeColor(routeId) {
-    if (CONFIG.ROUTE_COLORS[routeId]) return CONFIG.ROUTE_COLORS[routeId];
-    const text = String(routeId || '?');
+    const normalizedRouteId = _normalizeRouteLabel(routeId);
+    if (CONFIG.ROUTE_COLORS[normalizedRouteId]) return CONFIG.ROUTE_COLORS[normalizedRouteId];
+    const text = String(normalizedRouteId || '?');
     let hash = 0;
     for (let i = 0; i < text.length; i += 1) {
       hash = ((hash << 5) - hash) + text.charCodeAt(i);
@@ -29,7 +30,14 @@ const MapManager = (() => {
   }
 
   function _routeTextColor(routeId) {
-    return (routeId === '上23' || routeId === '上46' || routeId === '業10') ? '#000' : '#fff';
+    const normalizedRouteId = _normalizeRouteLabel(routeId);
+    return (normalizedRouteId === '上23' || normalizedRouteId === '上46' || normalizedRouteId === '業10') ? '#000' : '#fff';
+  }
+
+  function _normalizeRouteLabel(value) {
+    return String(value || '?')
+      .replace(/[ー－−﹣―‐‑‒–—]/g, '-')
+      .replace(/\s*[（(][A-Za-z]{1,3}\d{1,3}[）)]/g, '');
   }
 
   function _stopRouteColor(stop) {
@@ -48,10 +56,10 @@ const MapManager = (() => {
   }
 
   function _makeVehicleIcon(routeId) {
-    const color = _routeColor(routeId);
-    const textColor = _routeTextColor(routeId);
-    const label = String(routeId || '?');
-    const width = Math.max(38, Math.min(72, (label.length * 12) + 18));
+    const label = _normalizeRouteLabel(routeId);
+    const color = _routeColor(label);
+    const textColor = _routeTextColor(label);
+    const width = Math.max(38, Math.min(64, (label.length * 10) + 10));
     return L.divIcon({
       className: '',
       html: `<div class="vehicle-icon" style="background:${color};color:${textColor};" title="${label}">${label}</div>`,
@@ -254,7 +262,10 @@ const MapManager = (() => {
     const lat = parseFloat(pos.latitude ?? pos.lat);
     const lng = parseFloat(pos.longitude ?? pos.lon ?? pos.lng);
     const routeId = trip.route_id || entity.route_id || v.route_id || '?';
-    const routeLabel = v.route_short_name || v.route_display_name || routeId;
+    const routeShortName = v.route_short_name ? _normalizeRouteLabel(v.route_short_name) : undefined;
+    const routeDisplayName = v.route_display_name ? _normalizeRouteLabel(v.route_display_name) : undefined;
+    const routeLongName = v.route_long_name ? _normalizeRouteLabel(v.route_long_name) : undefined;
+    const routeLabel = routeShortName || routeDisplayName || _normalizeRouteLabel(routeId);
     const vehicleId = (entity.vehicle || {}).id || entity.id || v.id || v.vehicle_id
       || `${routeId}-${(trip.trip_id || entity.trip_id || v.trip_id || 'unknown').slice(0, 16)}-${lat.toFixed(4)}-${lng.toFixed(4)}`;
 
@@ -263,9 +274,9 @@ const MapManager = (() => {
     return {
       id: vehicleId,
       route_id: routeId,
-      route_short_name: v.route_short_name,
-      route_long_name: v.route_long_name,
-      route_display_name: v.route_display_name,
+      route_short_name: routeShortName,
+      route_long_name: routeLongName,
+      route_display_name: routeDisplayName,
       route_label: routeLabel,
       destination: v.destination,
       pattern_id: v.pattern_id,
