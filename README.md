@@ -11,17 +11,18 @@
 - 30秒ごとの車両位置更新
 - 停留所・車両クリックからチャット案内
 - 車両案内中に同じ車両を再クリックすると、地図の位置・ズームを保ったまま全バス表示へ戻る
+- Dify未接続でも、ローカル判定で地図連動の案内を継続（デモモード）
 - チャットから地図操作
   - 「都庁前付近を表示して」
   - 「都01を見せて」
   - 「バリアフリー停留所を表示して」
 
-## 今後の接続先
+## 接続状況
 
 - 公共交通オープンデータセンターの都バス GTFS/GTFS-JP 静的情報
-- 公共交通オープンデータセンターの都バス GTFS-RT VehiclePosition
-- Dify API
-- 公式FAQや問い合わせ導線のRAG
+- 公共交通オープンデータセンターの都バス GTFS-RT VehiclePosition（接続済み）
+- Dify API（任意接続。未設定時はデモモード）
+- 公式FAQや問い合わせ導線のRAG（今後）
 
 実装計画は [docs/toei-bus-dify-demo-plan.md](docs/toei-bus-dify-demo-plan.md) を参照してください。
 
@@ -91,8 +92,16 @@ servers:
 
 ```env
 ODPT_API_KEY=
+ODPT_PUBLIC_GTFS_RT_URL=https://api-public.odpt.org/api/v4/gtfs/realtime/ToeiBus
+ODPT_GTFS_RT_URL=
+ODPT_BUSROUTE_PATTERN_URL=https://api-public.odpt.org/api/v4/odpt:BusroutePattern
+ODPT_BUSSTOP_POLE_URL=https://api-public.odpt.org/api/v4/odpt:BusstopPole
+ODPT_SSL_VERIFY=true
 DIFY_API_URL=https://api.dify.ai
 DIFY_API_KEY=
+DIFY_APP_MODE=auto
+DIFY_SSL_VERIFY=true
+ETA_ASSUMED_SPEED_KMH=12
 ```
 
 GTFS-RT VehiclePosition は、公開エンドポイント `https://api-public.odpt.org/api/v4/gtfs/realtime/ToeiBus` を利用します。
@@ -110,12 +119,15 @@ GTFS-RT VehiclePosition は、公開エンドポイント `https://api-public.od
 | `GET /api/gtfs/realtime/vehicles` | 車両位置 |
 | `GET /api/gtfs/realtime/vehicles/search?route=早77` | 系統・行先で車両検索 |
 | `GET /api/gtfs/realtime/vehicles/nearby?lat=35.689634&lng=139.692101` | 周辺車両検索 |
+| `GET /api/gtfs/realtime/trip-updates` | 到着予測（現状はモック応答） |
 | `GET /api/gtfs/realtime/alerts` | 運行アラート |
 | `POST /api/chat/message` | Difyチャットプロキシ |
 
 ## データについて
 
-現在の停留所データは提案用のモックです。車両位置はODPTのGTFS-RT VehiclePositionから取得します。
+現在の停留所データは提案用のモックです。車両位置はODPTのGTFS-RT VehiclePositionを優先して取得し、取得失敗時はモック車両データにフォールバックします。
+
+`/api/gtfs/realtime/alerts` と `/api/gtfs/realtime/trip-updates` は、現状はPoC用モックデータを返します。
 
 都バスの実データ接続では、公共交通オープンデータセンターで提供される東京都交通局データの利用条件、ライセンス、クレジット表記を確認します。
 
