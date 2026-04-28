@@ -222,6 +222,45 @@ def _stop_id_from_busstop_pole_same_as(value: str | None) -> str:
     return f"{pole_number:04d}-{platform_number:02d}"
 
 
+def _stop_id_aliases(value: str | None) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+
+    aliases: list[str] = []
+
+    def push(alias: str) -> None:
+        candidate = alias.strip()
+        if candidate and candidate not in aliases:
+            aliases.append(candidate)
+
+    push(text)
+
+    # Common GTFS-RT stop_id forms: "0997-02", "997-2", "99702".
+    dashed = text.replace("_", "-")
+    if "-" in dashed:
+        parts = dashed.split("-", 1)
+        if len(parts) == 2:
+            left, right = parts[0].strip(), parts[1].strip()
+            if left.isdigit() and right.isdigit():
+                pole_number = int(left)
+                platform_number = int(right)
+                push(f"{pole_number:04d}-{platform_number:02d}")
+                push(f"{pole_number}-{platform_number}")
+                push(f"{pole_number}{platform_number:02d}")
+
+    if text.isdigit() and len(text) >= 3:
+        pole_raw = text[:-2]
+        platform_raw = text[-2:]
+        if pole_raw.isdigit() and platform_raw.isdigit():
+            pole_number = int(pole_raw)
+            platform_number = int(platform_raw)
+            push(f"{pole_number:04d}-{platform_number:02d}")
+            push(f"{pole_number}-{platform_number}")
+
+    return aliases
+
+
 def _busstop_name_from_item(item: dict) -> str:
     title = item.get("title") or {}
     if isinstance(title, dict) and title.get("ja"):
@@ -284,7 +323,8 @@ async def _load_busstop_pole_map(api_key: Optional[str]) -> dict[str, str]:
         parsed = _busstop_pole_from_item(item)
         if parsed:
             stop_id, name = parsed
-            items[stop_id] = name
+            for alias in _stop_id_aliases(stop_id):
+                items[alias] = name
 
     _BUSSTOP_POLE_CACHE["loaded_at"] = now
     _BUSSTOP_POLE_CACHE["items"] = items
@@ -303,7 +343,11 @@ def _metadata_for_vehicle(route_patterns: dict[str, dict], trip_id: str, directi
 
 
 def _stop_fields_for_vehicle(stop_id: str, status: str, stop_names: dict[str, str]) -> dict:
-    stop_name = stop_names.get(stop_id)
+    stop_name = None
+    for alias in _stop_id_aliases(stop_id):
+        stop_name = stop_names.get(alias)
+        if stop_name:
+            break
     if not stop_name:
         return {}
     return {
