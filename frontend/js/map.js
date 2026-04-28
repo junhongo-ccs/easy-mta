@@ -161,6 +161,8 @@ const MapManager = (() => {
       const data = await res.json();
       _allStops = Array.isArray(data) ? data : (data.stops || []);
       loadStops(_allStops);
+      // Alerts depend on stop markers; re-fetch after stops are rendered.
+      _fetchAlerts();
       _updateStatus(true);
     } catch (e) {
       console.warn('[MapManager] 停留所データ取得失敗:', e);
@@ -385,8 +387,19 @@ const MapManager = (() => {
 
   function focusOn(lat, lng, zoom, options = {}) {
     if (!_map) return;
-    const nextZoom = options.preserveZoom ? _map.getZoom() : (zoom ?? 15);
-    _map.flyTo([lat, lng], nextZoom, { duration: 1.2 });
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || Math.abs(parsedLat) > 90 || Math.abs(parsedLng) > 180) {
+      console.warn('[MapManager] focusOn に不正な座標が渡されました:', { lat, lng, zoom });
+      return;
+    }
+
+    let parsedZoom = Number(zoom);
+    if (!Number.isFinite(parsedZoom)) parsedZoom = 15;
+    parsedZoom = Math.max(1, Math.min(19, Math.round(parsedZoom)));
+
+    const nextZoom = options.preserveZoom ? _map.getZoom() : parsedZoom;
+    _map.flyTo([parsedLat, parsedLng], nextZoom, { duration: 1.2 });
   }
 
   function closePopups() {

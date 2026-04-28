@@ -13,11 +13,19 @@ document.addEventListener('DOMContentLoaded', () => {
       status.title = '地図の初期化に失敗しました';
     }
   }
-  ChatManager.init();
+  try {
+    ChatManager.init();
+  } catch (e) {
+    console.error('[都バスPoC] チャットの初期化に失敗しました:', e);
+  }
 
   // ── Chat input wiring ────────────────────────────────────────────────────
   const input = document.getElementById('chat-input');
   const sendBtn = document.getElementById('send-btn');
+  if (!input || !sendBtn) {
+    console.error('[都バスPoC] チャットUI要素が見つかりません: #chat-input または #send-btn');
+    return;
+  }
 
   function submitChat() {
     const text = input.value.trim();
@@ -48,9 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', async () => {
       refreshBtn.classList.add('spinning');
       refreshBtn.disabled = true;
-      await MapManager.refreshRealtime();
-      refreshBtn.classList.remove('spinning');
-      refreshBtn.disabled = false;
+      try {
+        await MapManager.refreshRealtime();
+      } finally {
+        refreshBtn.classList.remove('spinning');
+        refreshBtn.disabled = false;
+      }
     });
   }
 
