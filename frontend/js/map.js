@@ -29,6 +29,15 @@ const MapManager = (() => {
     return `hsl(${hue} 72% 46%)`;
   }
 
+  function _escapeHTML(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function _routeTextColor(routeId) {
     const normalizedRouteId = _normalizeRouteLabel(routeId);
     return (normalizedRouteId === '上23' || normalizedRouteId === '上46' || normalizedRouteId === '業10') ? '#000' : '#fff';
@@ -62,7 +71,7 @@ const MapManager = (() => {
     const width = Math.max(38, Math.min(64, (label.length * 10) + 10));
     return L.divIcon({
       className: '',
-      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};">${label}</div>`,
+      html: `<div class="vehicle-icon" style="background:${color};color:${textColor};">${_escapeHTML(label)}</div>`,
       iconSize: [width, 26],
       iconAnchor: [width / 2, 13],
     });
@@ -76,14 +85,14 @@ const MapManager = (() => {
   function _stopPopupHTML(stop) {
     const routes = (stop.routes || []);
     const badges = routes.map(r =>
-      `<span class="route-badge" style="background:${_routeColor(r)};color:${_routeTextColor(r)}">${r}</span>`
+      `<span class="route-badge" style="background:${_routeColor(r)};color:${_routeTextColor(r)}">${_escapeHTML(r)}</span>`
     ).join(' ');
     const accessible = stop.wheelchair_accessible === true
       ? '<div class="popup-meta">バリアフリー対応あり</div>'
       : '';
     return `
       <div class="map-popup">
-        <div class="popup-name">${stop.stop_name || stop.name || stop.stop_id}</div>
+        <div class="popup-name">${_escapeHTML(stop.stop_name || stop.name || stop.stop_id)}</div>
         <div class="popup-routes">${badges}</div>
         ${accessible}
       </div>`;
@@ -104,12 +113,12 @@ const MapManager = (() => {
     return `
       <div class="map-popup">
         <div class="popup-name">
-          <span class="route-badge" style="background:${color};color:${textColor}">${label}</span>
-          ${titleText}
+          <span class="route-badge" style="background:${color};color:${textColor}">${_escapeHTML(label)}</span>
+          ${_escapeHTML(titleText)}
         </div>
-        ${v.destination ? `<div class="popup-meta">${destinationLabel}</div>` : ''}
-        <div class="popup-meta popup-meta-sub">車両ID: ${v.id}</div>
-        <div class="popup-meta popup-meta-sub">更新: ${updated}</div>
+        ${v.destination ? `<div class="popup-meta">${_escapeHTML(destinationLabel)}</div>` : ''}
+        <div class="popup-meta popup-meta-sub">車両ID: ${_escapeHTML(v.id)}</div>
+        <div class="popup-meta popup-meta-sub">更新: ${_escapeHTML(updated)}</div>
       </div>`;
   }
 
@@ -133,6 +142,8 @@ const MapManager = (() => {
   // -------------------------------------------------------------------------
 
   function init() {
+    if (_map) return;
+
     _map = L.map('map', {
       center: CONFIG.MAP_CENTER,
       zoom: CONFIG.MAP_ZOOM,
@@ -447,6 +458,8 @@ const MapManager = (() => {
   }
 
   function _startRealtimePolling() {
+    if (_realtimeTimer) return;
+
     // Initial load
     _fetchVehicles();
     _realtimeTimer = setInterval(() => {

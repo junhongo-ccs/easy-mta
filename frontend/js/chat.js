@@ -281,6 +281,11 @@ const ChatManager = (() => {
   }
 
   function sendMapContext(context) {
+    if (!context || !context.type) {
+      console.warn('[ChatManager] 不正な map context が渡されました:', context);
+      return;
+    }
+
     const currentKey = _contextKey(context);
     if (context.type === 'vehicle' && currentKey && currentKey === _contextKey(_lastMapContext)) {
       if (window.MapManager?.clearVehicleFilter) {
@@ -421,6 +426,8 @@ const ChatManager = (() => {
       _lastMapContext = null;
       _isTyping = false;
       hideTyping();
+      const area = _el('chat-messages');
+      if (area) area.innerHTML = '';
       init();
     },
     sendMessage,

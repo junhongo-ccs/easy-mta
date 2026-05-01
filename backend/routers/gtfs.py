@@ -17,6 +17,59 @@ def _api_key() -> Optional[str]:
     return os.getenv("ODPT_API_KEY") or None
 
 
+def _vehicle_feature(vehicle: dict) -> Optional[dict]:
+    try:
+        lat = float(vehicle["latitude"])
+        lng = float(vehicle["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    if abs(lat) > 90 or abs(lng) > 180:
+        return None
+
+    vehicle_id = vehicle.get("vehicle_id") or vehicle.get("id")
+    route_label = (
+        vehicle.get("route_short_name")
+        or vehicle.get("route_display_name")
+        or vehicle.get("route_id")
+    )
+
+    return {
+        "type": "Feature",
+        "id": vehicle_id,
+        "geometry": {
+            "type": "Point",
+            "coordinates": [lng, lat],
+        },
+        "properties": {
+            "vehicle_id": vehicle_id,
+            "route_id": vehicle.get("route_id"),
+            "route_short_name": vehicle.get("route_short_name"),
+            "route_display_name": vehicle.get("route_display_name"),
+            "route_label": route_label,
+            "destination": vehicle.get("destination"),
+            "trip_id": vehicle.get("trip_id"),
+            "pattern_id": vehicle.get("pattern_id"),
+            "stop_id": vehicle.get("stop_id"),
+            "stop_name": vehicle.get("stop_name"),
+            "next_stop_name": vehicle.get("next_stop_name"),
+            "current_stop_name": vehicle.get("current_stop_name"),
+            "current_status": vehicle.get("current_status"),
+            "timestamp": vehicle.get("timestamp"),
+            "feed_timestamp": vehicle.get("feed_timestamp"),
+            "source": vehicle.get("source"),
+        },
+    }
+
+
+def _vehicle_feature_collection(vehicles: list[dict]) -> dict:
+    features = [_vehicle_feature(vehicle) for vehicle in vehicles]
+    return {
+        "type": "FeatureCollection",
+        "features": [feature for feature in features if feature is not None],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Static endpoints
 # ---------------------------------------------------------------------------
@@ -62,6 +115,17 @@ async def realtime_vehicles(routes: Optional[str] = Query(default=None, descript
         return await gtfs_realtime.get_vehicle_positions(_api_key(), route_list)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"リアルタイムデータを取得できませんでした: {exc}") from exc
+
+
+@router.get("/realtime/vehicles.geojson")
+async def realtime_vehicles_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs, e.g. 1,A,L")):
+    """Return current vehicle positions as GeoJSON FeatureCollection."""
+    route_list = [r.strip() for r in routes.split(",")] if routes else None
+    try:
+        vehicles = await gtfs_realtime.get_vehicle_positions(_api_key(), route_list)
+        return _vehicle_feature_collection(vehicles)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"GeoJSON車両データを取得できませんでした: {exc}") from exc
 
 
 @router.get("/realtime/vehicles/search")

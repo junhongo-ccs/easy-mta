@@ -117,6 +117,7 @@ GTFS-RT VehiclePosition は、公開エンドポイント `https://api-public.od
 | `GET /api/gtfs/routes` | 系統一覧 |
 | `GET /api/gtfs/stops/{stop_id}` | 停留所詳細 |
 | `GET /api/gtfs/realtime/vehicles` | 車両位置 |
+| `GET /api/gtfs/realtime/vehicles.geojson` | ArcGIS等で利用しやすいGeoJSON形式の車両位置 |
 | `GET /api/gtfs/realtime/vehicles/search?route=早77` | 系統・行先で車両検索 |
 | `GET /api/gtfs/realtime/vehicles/nearby?lat=35.689634&lng=139.692101` | 周辺車両検索 |
 | `GET /api/gtfs/realtime/trip-updates` | 到着予測（現状はモック応答） |

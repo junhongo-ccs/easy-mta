@@ -71,23 +71,25 @@
 
 ## 5.1 実装
 
-- [ ] `frontend/arcgis.html` を作成
-- [ ] ArcGIS SDK の CSS/JS を読み込む
-- [ ] `#viewDiv` を配置し、全画面または地図領域を確保
-- [ ] `frontend/js/arcgis.js` を作成
-- [ ] `Map` / `MapView` / `GraphicsLayer` を初期化
-- [ ] `/api/gtfs/realtime/vehicles` 取得処理を実装
-- [ ] 車両を `Graphic` として描画
-- [ ] 30秒ポーリングを実装
-- [ ] 取得失敗時の `console.warn` を追加
+- [x] `frontend/arcgis.html` を作成
+- [x] ArcGIS SDK の CSS/JS を読み込む
+- [x] `#viewDiv` を配置し、全画面または地図領域を確保
+- [x] `frontend/js/arcgis.js` を作成
+- [x] `Map` / `MapView` / `GraphicsLayer` を初期化
+- [x] `/api/gtfs/realtime/vehicles` 取得処理を実装
+- [x] 車両を `Graphic` として描画
+- [x] 30秒ポーリングを実装
+- [x] 取得失敗時の `console.warn` を追加
 
 ## 5.2 動作確認
 
-- [ ] `http://127.0.0.1:8000/index.html` が従来どおり動く
-- [ ] `http://127.0.0.1:8000/arcgis.html` が表示できる
-- [ ] 車両が点で表示される
-- [ ] 30秒後に再描画される
-- [ ] API失敗時に画面が真っ白にならない
+- [ ] `http://127.0.0.1:8000/app/index.html` が従来どおり動く
+- [x] `http://127.0.0.1:8000/arcgis.html` が表示できる
+- [x] 車両が点で表示される
+- [x] 車両クリックで系統・行先・車両ID・更新時刻のPopupが表示される
+- [x] 上部に表示車両数と更新時刻が表示される
+- [x] 30秒後に再描画される
+- [x] API失敗時に画面が真っ白にならない
 
 ## 5.3 反映
 
@@ -97,6 +99,7 @@
 
 ## 6. 次段階（第2段階）の候補
 
+- ArcGIS Online の「URL からレイヤーを追加」で `GET /api/gtfs/realtime/vehicles.geojson` を試す
 - ArcGISシンボルを系統色に合わせる
 - Popupに行先や更新時刻を整形表示
 - 停留所データも ArcGIS 側で重ねる
