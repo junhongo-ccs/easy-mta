@@ -105,6 +105,20 @@
 - 停留所データも ArcGIS 側で重ねる
 - ArcGIS Online へデータ保存して Dashboard 化
 
+## 6.1 ArcGIS Online 静止版メモ
+
+パーソナル版アカウントでは URL からのレイヤー追加が使えなかったため、CSVスナップショットをアップロードして静止版のWeb Mapを作成した。
+
+- 共有URL: https://arcg.is/1yznne0
+- Web Map ID: `811372adeebe4a4f8ef89dfd4274544b`
+- レイヤー名: `都バス車両位置CSV`
+- データ種別: CSVスナップショット（リアルタイム更新なし）
+- GTFS-RT feed timestamp: `2026-05-01 22:20:09 JST`
+- 車両位置 timestamp 範囲: `2026-05-01 22:13:57 JST` から `2026-05-01 22:20:00 JST`
+- CSVファイル作成時刻: `2026-05-01 22:27:05 JST`
+- 説明用表記: `2026年5月1日 22:20時点の静止版`
+- GW明けの次段階: 企業/組織アカウントで Feature Layer 化、URLレイヤー追加、Dashboard 化を検証する。
+
 ## 7. 次回の作業開始コマンド
 
 ```powershell
