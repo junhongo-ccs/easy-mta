@@ -288,6 +288,19 @@ async def routes_shapes_geojson(routes: Optional[str] = Query(default=None, desc
         raise HTTPException(status_code=503, detail=f"GeoJSON系統shapeを取得できませんでした: {exc}") from exc
 
 
+@router.get("/routes/snapped.geojson")
+async def routes_snapped_geojson(
+    routes: Optional[str] = Query(default=None, description="Comma-separated route IDs, e.g. 都01,業10"),
+    max_stops: int = Query(default=50, ge=2, le=150, description="Max via stops per route for ArcGIS solve"),
+):
+    """Return road-snapped route lines using ArcGIS Route API (fallback to shapes when unavailable)."""
+    route_list = [r.strip() for r in routes.split(",")] if routes else None
+    try:
+        return await gtfs_realtime.get_route_snapped_geojson(_api_key(), route_list, max_stops=max_stops)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"GeoJSON道路スナップ系統を取得できませんでした: {exc}") from exc
+
+
 @router.get("/routes/shapes-exact.geojson")
 async def routes_shapes_exact_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs or short names, e.g. 都01,業10")):
     """Return exact GTFS shapes.txt polylines as GeoJSON FeatureCollection."""

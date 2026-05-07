@@ -17,6 +17,9 @@ ODPT_PUBLIC_GTFS_RT_URL = "https://api-public.odpt.org/api/v4/gtfs/realtime/Toei
 ODPT_AUTH_GTFS_RT_URL = "https://api.odpt.org/api/v4/gtfs/realtime/ToeiBus"
 ODPT_BUSROUTE_PATTERN_URL = "https://api-public.odpt.org/api/v4/odpt:BusroutePattern"
 ODPT_BUSSTOP_POLE_URL = "https://api-public.odpt.org/api/v4/odpt:BusstopPole"
+ARCGIS_ROUTE_SOLVE_URL = (
+    "https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve"
+)
 
 # Mock data delay/arrival constants
 _MOCK_MIN_DELAY_SECONDS = -60
@@ -468,6 +471,138 @@ async def get_route_shapes_geojson(api_key: Optional[str], route_ids: Optional[l
         })
 
     return {"type": "FeatureCollection", "features": features}
+
+
+def _arcgis_route_api_key() -> Optional[str]:
+    key = os.getenv("ARCGIS_ROUTE_API_KEY", "").strip()
+    return key or None
+
+
+def _clip_stop_coords(coords: list[list[float]], max_stops: int) -> list[list[float]]:
+    if len(coords) <= max_stops:
+        return coords
+    # Keep stop order while down-sampling to satisfy route service limits.
+    step = (len(coords) - 1) / (max_stops - 1)
+    picked = []
+    for i in range(max_stops):
+        idx = round(i * step)
+        picked.append(coords[idx])
+    deduped: list[list[float]] = []
+    seen = set()
+    for lon, lat in picked:
+        key = f"{lon:.6f},{lat:.6f}"
+        if key not in seen:
+            seen.add(key)
+            deduped.append([lon, lat])
+    return deduped
+
+
+def _arcgis_stops_value(coords: list[list[float]]) -> str:
+    return ";".join(f"{lon},{lat}" for lon, lat in coords)
+
+
+def _path_from_arcgis_solve_payload(payload: dict) -> Optional[list[list[float]]]:
+    routes = payload.get("routes") or {}
+    features = routes.get("features") or []
+    if not features:
+        return None
+    geometry = (features[0] or {}).get("geometry") or {}
+    paths = geometry.get("paths") or []
+    if not paths or not paths[0]:
+        return None
+    out: list[list[float]] = []
+    for point in paths[0]:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            lon = float(point[0])
+            lat = float(point[1])
+        except (TypeError, ValueError):
+            continue
+        out.append([lon, lat])
+    return out if len(out) >= 2 else None
+
+
+async def _solve_arcgis_route(coords: list[list[float]], api_key: str) -> Optional[list[list[float]]]:
+    params = {
+        "f": "json",
+        "token": api_key,
+        "stops": _arcgis_stops_value(coords),
+        "preserveFirstStop": "true",
+        "preserveLastStop": "true",
+        "returnRoutes": "true",
+        "returnDirections": "false",
+        "outputLines": "esriNAOutputLineTrueShape",
+        "directionsLanguage": "ja",
+        "directionsOutputType": "esriDOTComplete",
+    }
+    async with httpx.AsyncClient(verify=_ssl_verify(), timeout=30.0) as client:
+        response = await client.get(ARCGIS_ROUTE_SOLVE_URL, params=params)
+        response.raise_for_status()
+        payload = response.json()
+    if payload.get("error"):
+        return None
+    return _path_from_arcgis_solve_payload(payload)
+
+
+async def get_route_snapped_geojson(
+    api_key: Optional[str],
+    route_ids: Optional[list[str]] = None,
+    max_stops: int = 50,
+) -> dict:
+    """Road-snapped route lines using ArcGIS Route service; fallback to raw shapes."""
+    base = await get_route_shapes_geojson(api_key, route_ids)
+    features = base.get("features") or []
+    route_api_key = _arcgis_route_api_key()
+
+    out_features: list[dict] = []
+    snapped_count = 0
+    for feature in features:
+        geometry = feature.get("geometry") or {}
+        coords = geometry.get("coordinates") or []
+        if not isinstance(coords, list) or len(coords) < 2:
+            continue
+        safe_coords = _clip_stop_coords(coords, max(2, min(max_stops, 150)))
+        snapped_coords = None
+        if route_api_key and len(safe_coords) >= 2:
+            try:
+                snapped_coords = await _solve_arcgis_route(safe_coords, route_api_key)
+            except Exception:
+                snapped_coords = None
+        props = dict(feature.get("properties") or {})
+        if snapped_coords and len(snapped_coords) >= 2:
+            snapped_count += 1
+            out_features.append({
+                **feature,
+                "geometry": {"type": "LineString", "coordinates": snapped_coords},
+                "properties": {
+                    **props,
+                    "path_type": "arcgis-route-snapped",
+                    "source_stop_count": len(coords),
+                    "solve_stop_count": len(safe_coords),
+                },
+            })
+        else:
+            out_features.append({
+                **feature,
+                "properties": {
+                    **props,
+                    "path_type": "odpt-busstop-order-shape",
+                    "source_stop_count": len(coords),
+                    "solve_stop_count": len(safe_coords),
+                    "snap_fallback": True,
+                },
+            })
+
+    return {
+        "type": "FeatureCollection",
+        "features": out_features,
+        "metadata": {
+            "snapped_count": snapped_count,
+            "total_count": len(out_features),
+            "using_arcgis_route": bool(route_api_key),
+        },
+    }
 
 
 def _metadata_for_vehicle(route_patterns: dict[str, dict], trip_id: str, direction_id: int | None) -> dict:

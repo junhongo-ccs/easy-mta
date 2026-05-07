@@ -139,6 +139,8 @@ ArcGIS SDK の `GeoJSONLayer` で `vehicles.geojson` を30秒ごとに再取得�
   - `GET /api/gtfs/routes/lines.geojson`
 - 系統shapeライン（ODPTの停留所順、GeoJSON）
   - `GET /api/gtfs/routes/shapes.geojson`
+- 系統道路スナップライン（ArcGIS Route API、GeoJSON）
+  - `GET /api/gtfs/routes/snapped.geojson`
 - 系統shapeライン（GTFS `shapes.txt` 厳密版、GeoJSON）
   - `GET /api/gtfs/routes/shapes-exact.geojson`
 - 系統絞り込み（共通）
@@ -146,11 +148,14 @@ ArcGIS SDK の `GeoJSONLayer` で `vehicles.geojson` を30秒ごとに再取得�
   - 例: `/api/gtfs/stops/terminals.geojson?routes=都01,業10`
   - 例: `/api/gtfs/routes/lines.geojson?routes=都01,業10`
   - 例: `/api/gtfs/routes/shapes.geojson?routes=都01,業10`
+  - 例: `/api/gtfs/routes/snapped.geojson?routes=都01,業10`
   - 例: `/api/gtfs/routes/shapes-exact.geojson?routes=都01,業10`
 
 補足:
 - `routes/lines.geojson` は直線ではなく、各系統に紐づく停留所（中間停留所含む）を経由する折れ線を返す。
 - `routes/shapes.geojson` は ODPT の `odpt:busstopPoleOrder` を使うため、`lines.geojson` より運行経路に近い。
+- `routes/snapped.geojson` は `shapes.geojson` の停留所順を ArcGIS 道路ネットワークで再ルートして道路沿いに補正する。
+- `routes/snapped.geojson` を有効化するには Railway 環境変数 `ARCGIS_ROUTE_API_KEY` を設定する（未設定時は `shapes` にフォールバック）。
 - `routes/shapes-exact.geojson` は GTFS `shapes.txt` の点列をそのまま使う厳密版（推奨）。
 
 `shapes-exact` を使う準備:
