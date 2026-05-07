@@ -71,6 +71,11 @@ async def arcgis_page():
     return RedirectResponse(url="/app/arcgis.html")
 
 
+@app.get("/arcgis-demo.html", include_in_schema=False)
+async def arcgis_demo_page():
+    return RedirectResponse(url="/app/arcgis-demo.html")
+
+
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok"}

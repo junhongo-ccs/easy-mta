@@ -27,6 +27,8 @@ _MOCK_MIN_ARRIVAL_OFFSET = 60
 _MOCK_MAX_ARRIVAL_OFFSET = 300
 _ROUTE_PATTERN_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": {}}
 _BUSSTOP_POLE_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": {}}
+_ROUTE_PATTERN_ITEMS_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": []}
+_BUSSTOP_POLE_ITEMS_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": []}
 _ROUTE_PATTERN_TTL_SECONDS = 3600
 _BUSSTOP_POLE_TTL_SECONDS = 3600
 _FULLWIDTH_TO_HALFWIDTH = str.maketrans(
@@ -196,6 +198,14 @@ def _route_pattern_from_item(item: dict) -> tuple[str, dict] | None:
             if "→" in parts[1]:
                 origin, destination = parts[1].split("→", 1)
     display_name = title or short_name
+    pole_orders = item.get("odpt:busstopPoleOrder") or []
+    stop_order: list[str] = []
+    for order in pole_orders:
+        if not isinstance(order, dict):
+            continue
+        stop_id = _stop_id_from_busstop_pole_same_as(str(order.get("odpt:busstopPole", "")))
+        if stop_id:
+            stop_order.append(stop_id)
     return _pattern_key(pattern, direction), {
         "pattern_id": pattern,
         "direction_id": direction,
@@ -205,6 +215,7 @@ def _route_pattern_from_item(item: dict) -> tuple[str, dict] | None:
         "origin": origin,
         "destination": destination,
         "busroute": item.get("odpt:busroute"),
+        "stop_order": stop_order,
     }
 
 
@@ -281,16 +292,7 @@ async def _load_route_pattern_map(api_key: Optional[str]) -> dict[str, dict]:
     if now - float(_ROUTE_PATTERN_CACHE["loaded_at"]) < _ROUTE_PATTERN_TTL_SECONDS:
         return _ROUTE_PATTERN_CACHE["items"]  # type: ignore[return-value]
 
-    url = os.getenv("ODPT_BUSROUTE_PATTERN_URL", "").strip() or ODPT_BUSROUTE_PATTERN_URL
-    params = {"odpt:operator": "odpt.Operator:Toei"}
-    if api_key and urlparse(url).netloc == "api.odpt.org":
-        params["acl:consumerKey"] = api_key
-
-    async with httpx.AsyncClient(verify=_ssl_verify(), timeout=20.0) as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-
+    data = await _load_route_pattern_items(api_key)
     items: dict[str, dict] = {}
     for item in data:
         parsed = _route_pattern_from_item(item)
@@ -303,12 +305,12 @@ async def _load_route_pattern_map(api_key: Optional[str]) -> dict[str, dict]:
     return items
 
 
-async def _load_busstop_pole_map(api_key: Optional[str]) -> dict[str, str]:
+async def _load_route_pattern_items(api_key: Optional[str]) -> list[dict]:
     now = time.time()
-    if now - float(_BUSSTOP_POLE_CACHE["loaded_at"]) < _BUSSTOP_POLE_TTL_SECONDS:
-        return _BUSSTOP_POLE_CACHE["items"]  # type: ignore[return-value]
+    if now - float(_ROUTE_PATTERN_ITEMS_CACHE["loaded_at"]) < _ROUTE_PATTERN_TTL_SECONDS:
+        return _ROUTE_PATTERN_ITEMS_CACHE["items"]  # type: ignore[return-value]
 
-    url = os.getenv("ODPT_BUSSTOP_POLE_URL", "").strip() or ODPT_BUSSTOP_POLE_URL
+    url = os.getenv("ODPT_BUSROUTE_PATTERN_URL", "").strip() or ODPT_BUSROUTE_PATTERN_URL
     params = {"odpt:operator": "odpt.Operator:Toei"}
     if api_key and urlparse(url).netloc == "api.odpt.org":
         params["acl:consumerKey"] = api_key
@@ -318,6 +320,17 @@ async def _load_busstop_pole_map(api_key: Optional[str]) -> dict[str, str]:
         response.raise_for_status()
         data = response.json()
 
+    _ROUTE_PATTERN_ITEMS_CACHE["loaded_at"] = now
+    _ROUTE_PATTERN_ITEMS_CACHE["items"] = data
+    return data
+
+
+async def _load_busstop_pole_map(api_key: Optional[str]) -> dict[str, str]:
+    now = time.time()
+    if now - float(_BUSSTOP_POLE_CACHE["loaded_at"]) < _BUSSTOP_POLE_TTL_SECONDS:
+        return _BUSSTOP_POLE_CACHE["items"]  # type: ignore[return-value]
+
+    data = await _load_busstop_pole_items(api_key)
     items: dict[str, str] = {}
     for item in data:
         parsed = _busstop_pole_from_item(item)
@@ -329,6 +342,132 @@ async def _load_busstop_pole_map(api_key: Optional[str]) -> dict[str, str]:
     _BUSSTOP_POLE_CACHE["loaded_at"] = now
     _BUSSTOP_POLE_CACHE["items"] = items
     return items
+
+
+async def _load_busstop_pole_items(api_key: Optional[str]) -> list[dict]:
+    now = time.time()
+    if now - float(_BUSSTOP_POLE_ITEMS_CACHE["loaded_at"]) < _BUSSTOP_POLE_TTL_SECONDS:
+        return _BUSSTOP_POLE_ITEMS_CACHE["items"]  # type: ignore[return-value]
+
+    url = os.getenv("ODPT_BUSSTOP_POLE_URL", "").strip() or ODPT_BUSSTOP_POLE_URL
+    params = {"odpt:operator": "odpt.Operator:Toei"}
+    if api_key and urlparse(url).netloc == "api.odpt.org":
+        params["acl:consumerKey"] = api_key
+
+    async with httpx.AsyncClient(verify=_ssl_verify(), timeout=20.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+    _BUSSTOP_POLE_ITEMS_CACHE["loaded_at"] = now
+    _BUSSTOP_POLE_ITEMS_CACHE["items"] = data
+    return data
+
+
+def _route_id_from_busroute(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.rsplit(".", 1)[-1]
+
+
+def _busstop_lat_lon(item: dict) -> tuple[Optional[float], Optional[float]]:
+    lat_raw = item.get("geo:lat")
+    lon_raw = item.get("geo:long")
+    if lat_raw is None or lon_raw is None:
+        region = item.get("ug:region")
+        if isinstance(region, dict):
+            coords = region.get("coordinates")
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                lon_raw = coords[0]
+                lat_raw = coords[1]
+    try:
+        lat = float(lat_raw)
+        lon = float(lon_raw)
+    except (TypeError, ValueError):
+        return None, None
+    if abs(lat) > 90 or abs(lon) > 180:
+        return None, None
+    return lat, lon
+
+
+async def get_route_shapes_geojson(api_key: Optional[str], route_ids: Optional[list[str]] = None) -> dict:
+    """Build shape-like route polylines from ODPT busstopPoleOrder."""
+    route_patterns = await _load_route_pattern_items(api_key)
+    busstop_items = await _load_busstop_pole_items(api_key)
+
+    pole_geometry_by_alias: dict[str, dict] = {}
+    for item in busstop_items:
+        stop_id = _stop_id_from_busstop_pole_same_as(str(item.get("owl:sameAs", "")))
+        if not stop_id:
+            continue
+        lat, lon = _busstop_lat_lon(item)
+        if lat is None or lon is None:
+            continue
+        detail = {
+            "stop_id": stop_id,
+            "stop_name": _busstop_name_from_item(item),
+            "lat": lat,
+            "lon": lon,
+        }
+        for alias in _stop_id_aliases(stop_id):
+            pole_geometry_by_alias[alias] = detail
+
+    filter_set = set(route_ids or [])
+    features: list[dict] = []
+    for item in route_patterns:
+        route_id = _route_id_from_busroute(str(item.get("odpt:busroute", "")))
+        if filter_set and route_id not in filter_set:
+            continue
+
+        title = str(item.get("dc:title") or "")
+        pattern = _normalize_pattern_id(str(item.get("odpt:pattern", "")))
+        direction = str(item.get("odpt:direction", ""))
+        stop_order = item.get("odpt:busstopPoleOrder") or []
+
+        coords: list[list[float]] = []
+        stops: list[str] = []
+        seen_stop_ids: set[str] = set()
+        for order in stop_order:
+            if not isinstance(order, dict):
+                continue
+            stop_id = _stop_id_from_busstop_pole_same_as(str(order.get("odpt:busstopPole", "")))
+            if not stop_id:
+                continue
+            detail = None
+            for alias in _stop_id_aliases(stop_id):
+                detail = pole_geometry_by_alias.get(alias)
+                if detail:
+                    break
+            if not detail:
+                continue
+            canonical = str(detail["stop_id"])
+            if canonical in seen_stop_ids:
+                continue
+            seen_stop_ids.add(canonical)
+            coords.append([float(detail["lon"]), float(detail["lat"])])
+            stops.append(str(detail.get("stop_name") or canonical))
+
+        if len(coords) < 2:
+            continue
+
+        features.append({
+            "type": "Feature",
+            "id": f"shape-{route_id}-{pattern}-{direction}",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {
+                "route_id": route_id,
+                "route_title": title,
+                "pattern_id": pattern,
+                "direction_id": direction,
+                "stop_count": len(coords),
+                "origin_stop_name": stops[0],
+                "destination_stop_name": stops[-1],
+                "path_type": "odpt-busstop-order-shape",
+            },
+        })
+
+    return {"type": "FeatureCollection", "features": features}
 
 
 def _metadata_for_vehicle(route_patterns: dict[str, dict], trip_id: str, direction_id: int | None) -> dict:

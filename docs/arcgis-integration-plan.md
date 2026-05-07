@@ -119,6 +119,45 @@
 - 説明用表記: `2026年5月1日 22:20時点の静止版`
 - GW明けの次段階: 企業/組織アカウントで Feature Layer 化、URLレイヤー追加、Dashboard 化を検証する。
 
+## 6.2 ArcGIS リアルタイムAPI版デモ（PoC）
+
+ArcGIS SDK の `GeoJSONLayer` で `vehicles.geojson` を30秒ごとに再取得するデモページを追加した。
+
+- URL: `http://127.0.0.1:8000/arcgis-demo.html`
+- API: `GET /api/gtfs/realtime/vehicles.geojson`
+- 更新間隔: 30秒（`refreshInterval: 0.5` 分）
+- 系統絞り込み: `http://127.0.0.1:8000/arcgis-demo.html?routes=都01,早77`
+- 目的: ArcGIS Online 連携前に「ArcGIS側でリアルタイム表示が成立するか」をローカルで検証する
+
+## 6.3 重ねるレイヤー（終点/始点 + 系統ライン）
+
+停留所を全件表示するとノイズが多いため、PoCでは終点/始点のみを重ねる。
+
+- 終点/始点ポイント（GeoJSON）
+  - `GET /api/gtfs/stops/terminals.geojson`
+- 系統ライン（始点-終点を結ぶPoCライン、GeoJSON）
+  - `GET /api/gtfs/routes/lines.geojson`
+- 系統shapeライン（ODPTの停留所順、GeoJSON）
+  - `GET /api/gtfs/routes/shapes.geojson`
+- 系統shapeライン（GTFS `shapes.txt` 厳密版、GeoJSON）
+  - `GET /api/gtfs/routes/shapes-exact.geojson`
+- 系統絞り込み（共通）
+  - 例: `?routes=都01,業10`
+  - 例: `/api/gtfs/stops/terminals.geojson?routes=都01,業10`
+  - 例: `/api/gtfs/routes/lines.geojson?routes=都01,業10`
+  - 例: `/api/gtfs/routes/shapes.geojson?routes=都01,業10`
+  - 例: `/api/gtfs/routes/shapes-exact.geojson?routes=都01,業10`
+
+補足:
+- `routes/lines.geojson` は直線ではなく、各系統に紐づく停留所（中間停留所含む）を経由する折れ線を返す。
+- `routes/shapes.geojson` は ODPT の `odpt:busstopPoleOrder` を使うため、`lines.geojson` より運行経路に近い。
+- `routes/shapes-exact.geojson` は GTFS `shapes.txt` の点列をそのまま使う厳密版（推奨）。
+
+`shapes-exact` を使う準備:
+1. `backend/data/gtfs/` に `routes.txt`, `trips.txt`, `shapes.txt` を配置する  
+2. もしくは環境変数 `GTFS_STATIC_DIR` で配置先を指定する  
+3. ArcGIS には `.../api/gtfs/routes/shapes-exact.geojson` を追加する
+
 ## 7. 次回の作業開始コマンド
 
 ```powershell

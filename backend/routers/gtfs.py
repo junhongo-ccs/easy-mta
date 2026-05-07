@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from services import gtfs_static, gtfs_realtime
+from services import gtfs_static, gtfs_realtime, gtfs_shapes
 
 router = APIRouter()
 
@@ -70,6 +70,185 @@ def _vehicle_feature_collection(vehicles: list[dict]) -> dict:
     }
 
 
+def _parse_routes_param(routes: Optional[str]) -> Optional[set[str]]:
+    if not routes:
+        return None
+    items = {item.strip() for item in routes.split(",") if item.strip()}
+    return items or None
+
+
+def _normalize_stop_name(name: str) -> str:
+    text = str(name or "").strip().replace("　", " ")
+    for suffix in ["駅前", "駅", "停留所", "バス停"]:
+        text = text.replace(suffix, "")
+    return text.replace(" ", "")
+
+
+def _stops_by_normalized_name(stops: list[dict]) -> dict[str, dict]:
+    mapping: dict[str, dict] = {}
+    for stop in stops:
+        normalized = _normalize_stop_name(str(stop.get("stop_name", "")))
+        if normalized and normalized not in mapping:
+            mapping[normalized] = stop
+    return mapping
+
+
+def _resolve_terminal_stops(route: dict, stop_map: dict[str, dict]) -> tuple[Optional[dict], Optional[dict]]:
+    route_name = str(route.get("route_name") or "")
+    core = route_name.split(" ", 1)[1] if " " in route_name else route_name
+    if " - " not in core:
+        return None, None
+    origin_raw, destination_raw = core.split(" - ", 1)
+    origin = stop_map.get(_normalize_stop_name(origin_raw))
+    destination = stop_map.get(_normalize_stop_name(destination_raw))
+    return origin, destination
+
+
+def _route_stops(route_id: str, stops: list[dict]) -> list[dict]:
+    return [stop for stop in stops if route_id in stop.get("routes", [])]
+
+
+def _farthest_stop_pair(stops: list[dict]) -> tuple[Optional[dict], Optional[dict]]:
+    if len(stops) < 2:
+        return None, None
+    best_pair: tuple[Optional[dict], Optional[dict]] = (None, None)
+    best_dist = -1.0
+    for i, a in enumerate(stops):
+        for b in stops[i + 1:]:
+            dx = float(a["stop_lon"]) - float(b["stop_lon"])
+            dy = float(a["stop_lat"]) - float(b["stop_lat"])
+            dist = dx * dx + dy * dy
+            if dist > best_dist:
+                best_dist = dist
+                best_pair = (a, b)
+    return best_pair
+
+
+def _ordered_route_path_stops(route_id: str, origin: Optional[dict], destination: Optional[dict], stops: list[dict]) -> list[dict]:
+    candidates = _route_stops(route_id, stops)
+    if not candidates:
+        return []
+
+    if not origin or not destination:
+        fallback_origin, fallback_destination = _farthest_stop_pair(candidates)
+        origin = origin or fallback_origin
+        destination = destination or fallback_destination
+    if not origin or not destination:
+        return candidates
+
+    origin_id = str(origin.get("stop_id", ""))
+    destination_id = str(destination.get("stop_id", ""))
+    origin_lon = float(origin["stop_lon"])
+    origin_lat = float(origin["stop_lat"])
+    destination_lon = float(destination["stop_lon"])
+    destination_lat = float(destination["stop_lat"])
+    vx = destination_lon - origin_lon
+    vy = destination_lat - origin_lat
+    norm = vx * vx + vy * vy
+    if norm <= 1e-12:
+        return [origin, destination] if origin_id != destination_id else [origin]
+
+    waypoints = []
+    seen = set()
+    for stop in candidates:
+        stop_id = str(stop.get("stop_id", ""))
+        if not stop_id or stop_id in seen:
+            continue
+        seen.add(stop_id)
+        if stop_id in {origin_id, destination_id}:
+            continue
+        px = float(stop["stop_lon"]) - origin_lon
+        py = float(stop["stop_lat"]) - origin_lat
+        t = (px * vx + py * vy) / norm
+        # Perpendicular distance from baseline for tie-breaking.
+        cross = abs(px * vy - py * vx)
+        waypoints.append((t, cross, stop))
+
+    waypoints.sort(key=lambda item: (item[0], item[1]))
+    ordered = [origin] + [item[2] for item in waypoints] + [destination]
+    deduped: list[dict] = []
+    seen_ids: set[str] = set()
+    for stop in ordered:
+        stop_id = str(stop.get("stop_id", ""))
+        if stop_id and stop_id not in seen_ids:
+            deduped.append(stop)
+            seen_ids.add(stop_id)
+    return deduped
+
+
+def _route_lines_feature_collection(route_filter: Optional[set[str]]) -> dict:
+    stops = gtfs_static.get_stops()
+    routes = gtfs_static.get_routes()
+    stop_map = _stops_by_normalized_name(stops)
+    features: list[dict] = []
+    for route in routes:
+        route_id = str(route.get("route_id", ""))
+        if route_filter and route_id not in route_filter:
+            continue
+        origin, destination = _resolve_terminal_stops(route, stop_map)
+        path_stops = _ordered_route_path_stops(route_id, origin, destination, stops)
+        if len(path_stops) < 2:
+            continue
+        features.append({
+            "type": "Feature",
+            "id": f"line-{route_id}",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[float(stop["stop_lon"]), float(stop["stop_lat"])] for stop in path_stops],
+            },
+            "properties": {
+                "route_id": route_id,
+                "route_name": route.get("route_name"),
+                "route_color": route.get("route_color"),
+                "origin_stop_name": path_stops[0].get("stop_name"),
+                "destination_stop_name": path_stops[-1].get("stop_name"),
+                "stop_count": len(path_stops),
+                "path_type": "stop-sequence-polyline",
+            },
+        })
+    return {"type": "FeatureCollection", "features": features}
+
+
+def _route_terminals_feature_collection(route_filter: Optional[set[str]]) -> dict:
+    stops = gtfs_static.get_stops()
+    routes = gtfs_static.get_routes()
+    stop_map = _stops_by_normalized_name(stops)
+    features_by_id: dict[str, dict] = {}
+    for route in routes:
+        route_id = str(route.get("route_id", ""))
+        if route_filter and route_id not in route_filter:
+            continue
+        origin, destination = _resolve_terminal_stops(route, stop_map)
+        for role, stop in [("origin", origin), ("destination", destination)]:
+            if not stop:
+                continue
+            stop_id = str(stop.get("stop_id", ""))
+            if not stop_id:
+                continue
+            if stop_id not in features_by_id:
+                features_by_id[stop_id] = {
+                    "type": "Feature",
+                    "id": stop_id,
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(stop["stop_lon"]), float(stop["stop_lat"])],
+                    },
+                    "properties": {
+                        "stop_id": stop_id,
+                        "stop_name": stop.get("stop_name"),
+                        "terminal_roles": [],
+                        "routes": [],
+                    },
+                }
+            feature = features_by_id[stop_id]
+            if role not in feature["properties"]["terminal_roles"]:
+                feature["properties"]["terminal_roles"].append(role)
+            if route_id not in feature["properties"]["routes"]:
+                feature["properties"]["routes"].append(route_id)
+
+    return {"type": "FeatureCollection", "features": list(features_by_id.values())}
+
+
 # ---------------------------------------------------------------------------
 # Static endpoints
 # ---------------------------------------------------------------------------
@@ -90,6 +269,42 @@ async def search_stops(q: str = Query(description="停留所名、エリア、�
 async def list_routes():
     """Return all bus routes."""
     return gtfs_static.get_routes()
+
+
+@router.get("/routes/lines.geojson")
+async def routes_lines_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs, e.g. 都01,業10")):
+    """Return PoC route lines (origin->destination, stop-sequence polyline) as GeoJSON FeatureCollection."""
+    route_filter = _parse_routes_param(routes)
+    return _route_lines_feature_collection(route_filter)
+
+
+@router.get("/routes/shapes.geojson")
+async def routes_shapes_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs, e.g. 都01,業10")):
+    """Return shape-like route lines from ODPT busstop order as GeoJSON FeatureCollection."""
+    route_list = [r.strip() for r in routes.split(",")] if routes else None
+    try:
+        return await gtfs_realtime.get_route_shapes_geojson(_api_key(), route_list)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"GeoJSON系統shapeを取得できませんでした: {exc}") from exc
+
+
+@router.get("/routes/shapes-exact.geojson")
+async def routes_shapes_exact_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs or short names, e.g. 都01,業10")):
+    """Return exact GTFS shapes.txt polylines as GeoJSON FeatureCollection."""
+    route_list = [r.strip() for r in routes.split(",")] if routes else None
+    try:
+        return gtfs_shapes.get_exact_route_shapes_geojson(route_list)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=f"GTFS静的ファイル不足: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"GeoJSON厳密shapeを取得できませんでした: {exc}") from exc
+
+
+@router.get("/stops/terminals.geojson")
+async def terminal_stops_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs, e.g. 都01,業10")):
+    """Return terminal stops (origin/destination only) as GeoJSON FeatureCollection."""
+    route_filter = _parse_routes_param(routes)
+    return _route_terminals_feature_collection(route_filter)
 
 
 @router.get("/stops/{stop_id}")
