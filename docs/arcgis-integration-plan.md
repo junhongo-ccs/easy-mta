@@ -163,6 +163,22 @@ ArcGIS SDK の `GeoJSONLayer` で `vehicles.geojson` を30秒ごとに再取得�
 2. もしくは環境変数 `GTFS_STATIC_DIR` で配置先を指定する  
 3. ArcGIS には `.../api/gtfs/routes/shapes-exact.geojson` を追加する
 
+## 6.4 ArcGIS貼り込み用URL（3レイヤー）
+
+ArcGIS Map Viewer に追加する本番URL（推奨3レイヤー）。
+
+1. 車両レイヤー（リアルタイム）
+   - `https://easy-mta-production.up.railway.app/api/gtfs/realtime/vehicles.geojson`
+2. 路線レイヤー（道路補正版）
+   - `https://easy-mta-production.up.railway.app/api/gtfs/routes/snapped.geojson`
+3. 停留所レイヤー（始点/終点）
+   - `https://easy-mta-production.up.railway.app/api/gtfs/stops/terminals.geojson`
+
+レイヤー順（下から）:
+1. `routes/snapped.geojson`
+2. `stops/terminals.geojson`
+3. `realtime/vehicles.geojson`
+
 ## 7. 次回の作業開始コマンド
 
 ```powershell
