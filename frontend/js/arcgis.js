@@ -5,16 +5,55 @@ require([
   'esri/views/MapView',
   'esri/Graphic',
   'esri/layers/GraphicsLayer',
-], function (Map, MapView, Graphic, GraphicsLayer) {
+  'esri/layers/GeoJSONLayer',
+], function (Map, MapView, Graphic, GraphicsLayer, GeoJSONLayer) {
   const API_URL = '/api/gtfs/realtime/vehicles';
   const POLLING_MS = 30000;
   const DEFAULT_CENTER = [139.7619, 35.6842];
   const DEFAULT_ZOOM = 14;
 
+  const params = new URLSearchParams(window.location.search);
+  const routes = params.get('routes');
+  const routeSuffix = routes ? `?routes=${encodeURIComponent(routes)}` : '';
+  const ROUTE_LAYER_URL = `/api/gtfs/routes/snapped.geojson${routeSuffix}`;
+  const TERMINAL_LAYER_URL = `/api/gtfs/stops/terminals.geojson${routeSuffix}`;
+
+  const routeLayer = new GeoJSONLayer({
+    url: ROUTE_LAYER_URL,
+    title: '都バス系統（道路補正版）',
+    opacity: 0.55,
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'simple-line',
+        color: '#E87500',
+        width: 1.2,
+      },
+    },
+  });
+
+  const terminalLayer = new GeoJSONLayer({
+    url: TERMINAL_LAYER_URL,
+    title: '始点/終点停留所',
+    opacity: 0.9,
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'simple-marker',
+        color: '#8CD17D',
+        size: 8,
+        outline: {
+          color: '#2F6B2D',
+          width: 1,
+        },
+      },
+    },
+  });
+
   const vehicleLayer = new GraphicsLayer();
   const map = new Map({
     basemap: 'streets-navigation-vector',
-    layers: [vehicleLayer],
+    layers: [routeLayer, terminalLayer, vehicleLayer],
   });
 
   const view = new MapView({
