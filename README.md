@@ -4,6 +4,15 @@
 
 左側にLeaflet.jsの地図、右側にDify連携を想定したチャットを配置し、利用者が自然文で停留所・系統・運行状況にアクセスできるイメージを示します。
 
+## 画面構成
+
+- HTML版（Leaflet）
+  - デプロイ版: `https://easy-mta-production.up.railway.app/app/index.html`
+- GIS版（ArcGIS）
+  - デプロイ版: `https://easy-mta-production.up.railway.app/arcgis.html`
+
+GIS版（ArcGIS）連携の詳細は [docs/arcgis-integration-plan.md](docs/arcgis-integration-plan.md) を参照してください。
+
 ## 現在できること
 
 - 都バス風の停留所モック表示
@@ -52,7 +61,8 @@ cd backend
 ブラウザで開きます。
 
 ```text
-http://127.0.0.1:8000
+HTML版: https://easy-mta-production.up.railway.app/app/index.html
+GIS版:  https://easy-mta-production.up.railway.app/arcgis.html
 ```
 
 ## Railwayデプロイ

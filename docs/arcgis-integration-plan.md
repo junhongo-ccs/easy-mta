@@ -169,15 +169,72 @@ ArcGIS Map Viewer に追加する本番URL（推奨3レイヤー）。
 
 1. 車両レイヤー（リアルタイム）
    - `https://easy-mta-production.up.railway.app/api/gtfs/realtime/vehicles.geojson`
-2. 路線レイヤー（道路補正版）
-   - `https://easy-mta-production.up.railway.app/api/gtfs/routes/snapped.geojson`
+2. 路線レイヤー（公式GTFS `shapes.txt` 抽出版）
+   - `https://easy-mta-production.up.railway.app/api/gtfs/routes/shapes-exact.geojson`
 3. 停留所レイヤー（始点/終点）
    - `https://easy-mta-production.up.railway.app/api/gtfs/stops/terminals.geojson`
 
 レイヤー順（下から）:
-1. `routes/snapped.geojson`
+1. `routes/shapes-exact.geojson`
 2. `stops/terminals.geojson`
 3. `realtime/vehicles.geojson`
+
+## 6.5 ArcGIS Online 個人版（3）実装準備
+
+前提: 個人アカウントでは「URL からレイヤー追加」が使えないため、ファイルアップロード運用で進める。
+
+### 準備ゴール
+
+- ArcGIS Online 個人版で、道路沿い路線を含む3レイヤー構成を表示できる
+- 更新時に差し替えるファイルと手順が固定化されている
+
+### レイヤー方針（個人版）
+
+1. 車両位置: CSV（既存運用を継続）
+2. 路線: 線データ（GeoJSONまたはShapefile）をアップロード
+3. 停留所（始点/終点）: ポイントデータ（GeoJSONまたはCSV）をアップロード
+
+### 事前に用意する配布ファイル（推奨）
+
+- `vehicles.csv`（車両位置スナップショット）
+- `routes-shapes-exact.geojson`（公式GTFS `shapes.txt` 抽出路線、第一候補）
+- `stops-terminals.geojson`（始点/終点）
+
+補足:
+- 線データはCSVよりGeoJSON/SHAPEが安全。
+- ArcGIS Online 側で GeoJSON 取込が不安定な場合は SHP（zip）に変換して取り込む。
+- 道路追従の一貫性を優先するため、3では `routes/shapes-exact.geojson` を基準として利用する。
+
+### 実装準備チェックリスト（3向け）
+
+- [x] 路線データの確定（推奨: `shapes-exact.geojson`）
+- [x] 系統名フィールドを確認（`route_id` / `route_short_name`）
+- [ ] 線データを ArcGIS Online 個人版へアップロード
+- [ ] 停留所データ（始点/終点）をアップロード
+- [ ] 既存 `都バス車両位置CSV` レイヤーと重ねて Web Map 保存
+- [ ] レイヤー順を固定（下: 路線 / 中: 停留所 / 上: 車両）
+- [ ] 更新運用手順を確定（差し替え頻度、担当者、命名規則）
+
+### フィールド利用ルール（3向け確定）
+
+- 識別キー: `route_id`（結合・フィルタ・重複判定に使用）
+- 表示名: `route_short_name`（凡例・Popup見出しに使用）
+- 代替表示: `route_short_name` が空の場合のみ `route_id` を表示
+
+補足:
+- `routes/shapes-exact.geojson` は `route_id` と `route_short_name` の両方を持つ。
+
+### 更新運用ルール（推奨）
+
+- ファイル命名例:
+  - `vehicles_YYYYMMDD_HHMM.csv`
+  - `routes-shapes-exact_YYYYMMDD.geojson`
+  - `stops-terminals_YYYYMMDD.geojson`
+- 更新単位:
+  - 車両: 高頻度（必要に応じて日次または任意）
+  - 路線/停留所: 低頻度（経路改定時）
+- 表示注記:
+  - Web Map の説明欄に「データ時点（JST）」を明記する
 
 ## 7. 次回の作業開始コマンド
 

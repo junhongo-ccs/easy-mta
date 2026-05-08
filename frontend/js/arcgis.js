@@ -15,12 +15,12 @@ require([
   const params = new URLSearchParams(window.location.search);
   const routes = params.get('routes');
   const routeSuffix = routes ? `?routes=${encodeURIComponent(routes)}` : '';
-  const ROUTE_LAYER_URL = `/api/gtfs/routes/snapped.geojson${routeSuffix}`;
+  const ROUTE_LAYER_URL = `/api/gtfs/routes/shapes-exact.geojson${routeSuffix}`;
   const TERMINAL_LAYER_URL = `/api/gtfs/stops/terminals.geojson${routeSuffix}`;
 
   const routeLayer = new GeoJSONLayer({
     url: ROUTE_LAYER_URL,
-    title: '都バス系統（道路補正版）',
+    title: '都バス系統（GTFS shapes準拠）',
     opacity: 0.55,
     renderer: {
       type: 'simple',
