@@ -302,11 +302,15 @@ async def routes_snapped_geojson(
 
 
 @router.get("/routes/shapes-exact.geojson")
-async def routes_shapes_exact_geojson(routes: Optional[str] = Query(default=None, description="Comma-separated route IDs or short names, e.g. 都01,業10")):
+async def routes_shapes_exact_geojson(
+    routes: Optional[str] = Query(default=None, description="Comma-separated route IDs or short names, e.g. 都01,業10"),
+    mode: str = Query(default="all", description="all or representative"),
+):
     """Return exact GTFS shapes.txt polylines as GeoJSON FeatureCollection."""
     route_list = [r.strip() for r in routes.split(",")] if routes else None
     try:
-        return gtfs_shapes.get_exact_route_shapes_geojson(route_list)
+        representative_only = mode == "representative"
+        return gtfs_shapes.get_exact_route_shapes_geojson(route_list, representative_only=representative_only)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=f"GTFS静的ファイル不足: {exc}") from exc
     except Exception as exc:

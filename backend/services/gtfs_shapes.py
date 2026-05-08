@@ -56,12 +56,24 @@ def _load_exact_shapes_data() -> dict:
         }
 
     route_to_shapes: dict[str, set[str]] = {}
+    route_shape_trip_counts: dict[str, dict[str, int]] = {}
+    route_shape_direction_counts: dict[str, dict[str, dict[str, int]]] = {}
     for row in trips:
         route_id = str(row.get("route_id") or "").strip()
         shape_id = str(row.get("shape_id") or "").strip()
         if not route_id or not shape_id:
             continue
         route_to_shapes.setdefault(route_id, set()).add(shape_id)
+        route_shape_trip_counts.setdefault(route_id, {})
+        route_shape_trip_counts[route_id][shape_id] = route_shape_trip_counts[route_id].get(shape_id, 0) + 1
+
+        direction_id = str(row.get("direction_id") or "").strip()
+        route_shape_direction_counts.setdefault(route_id, {})
+        route_shape_direction_counts[route_id].setdefault(shape_id, {})
+        if direction_id:
+            route_shape_direction_counts[route_id][shape_id][direction_id] = (
+                route_shape_direction_counts[route_id][shape_id].get(direction_id, 0) + 1
+            )
 
     shape_points: dict[str, list[tuple[int, float, float]]] = {}
     for row in shapes:
@@ -85,6 +97,8 @@ def _load_exact_shapes_data() -> dict:
     data = {
         "route_meta": route_meta,
         "route_to_shapes": route_to_shapes,
+        "route_shape_trip_counts": route_shape_trip_counts,
+        "route_shape_direction_counts": route_shape_direction_counts,
         "shape_points": shape_points,
     }
     _CACHE["key"] = cache_key
@@ -92,10 +106,44 @@ def _load_exact_shapes_data() -> dict:
     return data
 
 
-def get_exact_route_shapes_geojson(route_filters: Optional[list[str]] = None) -> dict:
+def _choose_representative_shapes(
+    route_id: str,
+    shape_ids: set[str],
+    shape_points: dict[str, list[tuple[int, float, float]]],
+    route_shape_trip_counts: dict[str, dict[str, int]],
+    route_shape_direction_counts: dict[str, dict[str, dict[str, int]]],
+) -> list[str]:
+    # Pick at most one shape per direction based on trip frequency, then point count.
+    by_direction: dict[str, list[str]] = {}
+    for shape_id in shape_ids:
+        direction_counts = route_shape_direction_counts.get(route_id, {}).get(shape_id, {})
+        if direction_counts:
+            direction = max(direction_counts.items(), key=lambda item: item[1])[0]
+        else:
+            direction = "unknown"
+        by_direction.setdefault(direction, []).append(shape_id)
+
+    selected: list[str] = []
+    for _, candidates in by_direction.items():
+        ranked = sorted(
+            candidates,
+            key=lambda sid: (
+                route_shape_trip_counts.get(route_id, {}).get(sid, 0),
+                len(shape_points.get(sid, [])),
+            ),
+            reverse=True,
+        )
+        if ranked:
+            selected.append(ranked[0])
+    return sorted(set(selected))
+
+
+def get_exact_route_shapes_geojson(route_filters: Optional[list[str]] = None, representative_only: bool = False) -> dict:
     data = _load_exact_shapes_data()
     route_meta: dict[str, dict] = data["route_meta"]  # type: ignore[assignment]
     route_to_shapes: dict[str, set[str]] = data["route_to_shapes"]  # type: ignore[assignment]
+    route_shape_trip_counts: dict[str, dict[str, int]] = data["route_shape_trip_counts"]  # type: ignore[assignment]
+    route_shape_direction_counts: dict[str, dict[str, dict[str, int]]] = data["route_shape_direction_counts"]  # type: ignore[assignment]
     shape_points: dict[str, list[tuple[int, float, float]]] = data["shape_points"]  # type: ignore[assignment]
 
     filters = {f.strip() for f in (route_filters or []) if f.strip()}
@@ -105,7 +153,18 @@ def get_exact_route_shapes_geojson(route_filters: Optional[list[str]] = None) ->
         short_name = str(meta.get("route_short_name") or "")
         if filters and route_id not in filters and short_name not in filters:
             continue
-        for shape_id in sorted(shape_ids):
+        target_shape_ids = (
+            _choose_representative_shapes(
+                route_id,
+                shape_ids,
+                shape_points,
+                route_shape_trip_counts,
+                route_shape_direction_counts,
+            )
+            if representative_only
+            else sorted(shape_ids)
+        )
+        for shape_id in target_shape_ids:
             points = shape_points.get(shape_id, [])
             if len(points) < 2:
                 continue
@@ -121,6 +180,8 @@ def get_exact_route_shapes_geojson(route_filters: Optional[list[str]] = None) ->
                     "route_color": meta.get("route_color"),
                     "shape_id": shape_id,
                     "point_count": len(coords),
+                    "shape_trip_count": route_shape_trip_counts.get(route_id, {}).get(shape_id, 0),
+                    "representative": representative_only,
                     "path_type": "gtfs-shapes-exact",
                 },
             })

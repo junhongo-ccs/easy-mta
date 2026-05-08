@@ -14,9 +14,13 @@ require([
 
   const params = new URLSearchParams(window.location.search);
   const routes = params.get('routes');
-  const routeSuffix = routes ? `?routes=${encodeURIComponent(routes)}` : '';
-  const ROUTE_LAYER_URL = `/api/gtfs/routes/shapes-exact.geojson${routeSuffix}`;
-  const TERMINAL_LAYER_URL = `/api/gtfs/stops/terminals.geojson${routeSuffix}`;
+  const routeParams = new URLSearchParams();
+  routeParams.set('mode', 'representative');
+  if (routes) routeParams.set('routes', routes);
+  const terminalParams = new URLSearchParams();
+  if (routes) terminalParams.set('routes', routes);
+  const ROUTE_LAYER_URL = `/api/gtfs/routes/shapes-exact.geojson?${routeParams.toString()}`;
+  const TERMINAL_LAYER_URL = `/api/gtfs/stops/terminals.geojson${terminalParams.toString() ? `?${terminalParams.toString()}` : ''}`;
 
   const routeLayer = new GeoJSONLayer({
     url: ROUTE_LAYER_URL,
