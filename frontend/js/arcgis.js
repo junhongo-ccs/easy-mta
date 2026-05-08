@@ -103,6 +103,7 @@ require([
     const vehicleId = String(vehicle.vehicle_id || vehicle.id || '-');
     const updated = vehicle.timestamp ? new Date(Number(vehicle.timestamp) * 1000).toLocaleString('ja-JP', { hour12: false }) : '-';
     const destination = String(vehicle.destination || '-');
+    const nextStop = String(vehicle.next_stop_name || '-');
 
     return new Graphic({
       geometry: {
@@ -114,6 +115,7 @@ require([
         routeLabel,
         vehicleId,
         destination,
+        nextStop,
         updated,
       },
       symbol: {
@@ -130,6 +132,7 @@ require([
         content: [
           { type: 'text', text: '系統: {routeLabel}' },
           { type: 'text', text: '行先: {destination}' },
+          { type: 'text', text: '次の停留所: {nextStop}' },
           { type: 'text', text: '車両ID: {vehicleId}' },
           { type: 'text', text: '更新時刻: {updated}' },
         ],

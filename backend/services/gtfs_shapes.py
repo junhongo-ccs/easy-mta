@@ -6,11 +6,13 @@ Builds exact route polylines from GTFS files (routes/trips/shapes).
 from __future__ import annotations
 
 import csv
+import math
 import os
 from pathlib import Path
 from typing import Optional
 
 _CACHE: dict[str, object] = {"key": "", "value": None}
+_MAX_SEGMENT_METERS = 900.0
 
 
 def _gtfs_dir() -> Path:
@@ -106,6 +108,45 @@ def _load_exact_shapes_data() -> dict:
     return data
 
 
+def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _sanitize_shape_coords(coords: list[list[float]], max_segment_m: float = _MAX_SEGMENT_METERS) -> list[list[float]]:
+    if len(coords) < 2:
+        return coords
+
+    chunks: list[list[list[float]]] = []
+    current: list[list[float]] = [coords[0]]
+    for i in range(1, len(coords)):
+        prev = coords[i - 1]
+        cur = coords[i]
+        dist = _distance_m(prev[1], prev[0], cur[1], cur[0])
+        if dist > max_segment_m:
+            if len(current) >= 2:
+                chunks.append(current)
+            current = [cur]
+            continue
+        current.append(cur)
+    if len(current) >= 2:
+        chunks.append(current)
+
+    if not chunks:
+        return []
+
+    # Keep the longest connected chunk to avoid sea-crossing jump artifacts.
+    return max(chunks, key=len)
+
+
 def _choose_representative_shapes(
     route_id: str,
     shape_ids: set[str],
@@ -169,6 +210,9 @@ def get_exact_route_shapes_geojson(route_filters: Optional[list[str]] = None, re
             if len(points) < 2:
                 continue
             coords = [[lon, lat] for _, lon, lat in points]
+            coords = _sanitize_shape_coords(coords)
+            if len(coords) < 2:
+                continue
             features.append({
                 "type": "Feature",
                 "id": f"exact-{route_id}-{shape_id}",
